@@ -132,9 +132,13 @@ const CONFIG = {
 | Excluir conta | ✅ | ❌ | ❌ |
 | Marcar como pago | ✅ | ❌ | ✅ |
 | CRUD Fornecedores | ✅ | ❌ | ✅ |
-| CRUD Categorias | ✅ | ❌ | ❌ |
+| CRUD Categorias (criar/editar) | ✅ | ❌ | ✅ |
+| Desativar Categoria | ✅ | ❌ | ❌ |
+| CRUD Solicitantes (criar/editar) | ✅ | ❌ | ✅ |
+| Desativar Solicitante | ✅ | ❌ | ❌ |
 | Ver Relatório | ✅ | ✅ | ✅ |
 | Gestão de Usuários | ✅ | ❌ | ❌ |
+| Alterar a própria senha | ✅ | ✅ | ✅ |
 
 ---
 

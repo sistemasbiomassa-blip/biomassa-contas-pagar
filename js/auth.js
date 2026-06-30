@@ -88,12 +88,19 @@ const AUTH = (() => {
   // Mostra/oculta itens de menu conforme o perfil
   const _configurarMenuPorPerfil = (sessao) => {
     // Itens restritos a ADMIN
-    const itensAdmin = ['nav-usuarios', 'nav-sep-admin', 'nav-categorias'];
+    const itensAdmin = ['nav-usuarios', 'nav-sep-admin'];
     itensAdmin.forEach((id) => {
       const el = document.getElementById(id);
       if (!el) return;
       el.classList.toggle('hidden', sessao.perfil !== CONFIG.perfis.ADMIN);
     });
+
+    // Categorias: ADMIN e FINANCEIRO podem gerenciar
+    const navCategorias = document.getElementById('nav-categorias');
+    if (navCategorias) {
+      const podeVer = sessao.perfil === CONFIG.perfis.ADMIN || sessao.perfil === CONFIG.perfis.FINANCEIRO;
+      navCategorias.classList.toggle('hidden', !podeVer);
+    }
   };
 
   // Preenche nome/perfil na sidebar e no header
@@ -107,6 +114,92 @@ const AUTH = (() => {
     const hPerfil = document.getElementById('header-usuario-perfil');
     if (hNome)   hNome.textContent   = sessao.nome;
     if (hPerfil) hPerfil.textContent = sessao.perfil;
+  };
+
+  // ===== ALTERAR MINHA SENHA (self-service) =====
+
+  const _limparModalMinhaSenha = () => {
+    ['ms-senha-atual', 'ms-nova-senha', 'ms-confirmar-senha'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    const aviso = document.getElementById('ms-aviso');
+    if (aviso) aviso.textContent = '';
+    document.querySelectorAll('#form-minha-senha .erro').forEach((el) => el.classList.remove('erro'));
+  };
+
+  const _validarMinhaSenha = () => {
+    let valido = true;
+    const checar = (id, condicao) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const passou = condicao(el.value);
+      el.classList.toggle('erro', !passou);
+      if (!passou) valido = false;
+    };
+
+    checar('ms-senha-atual', (v) => v.length > 0);
+    checar('ms-nova-senha',  (v) => v.length >= 6);
+    checar('ms-confirmar-senha', (v) => v === document.getElementById('ms-nova-senha').value);
+
+    return valido;
+  };
+
+  const _salvarMinhaSenha = async () => {
+    if (!_validarMinhaSenha()) {
+      const aviso = document.getElementById('ms-aviso');
+      if (aviso) aviso.textContent = 'Verifique os campos: senha atual obrigatória, nova senha com mínimo 6 caracteres e confirmação igual.';
+      return;
+    }
+
+    const sessao = getSessao();
+    if (!sessao) return;
+
+    const btnConfirmar = document.getElementById('btn-confirmar-minha-senha');
+    btnConfirmar.disabled = true;
+
+    try {
+      await API.post('alterarMinhaSenha', {
+        login:      sessao.login,
+        senhaAtual: document.getElementById('ms-senha-atual').value,
+        novaSenha:  document.getElementById('ms-nova-senha').value
+      });
+      UI.showToast('Senha alterada com sucesso.', 'sucesso');
+      UI.closeModal('modal-minha-senha');
+    } catch (err) {
+      UI.showToast(err.message || 'Erro ao alterar senha.', 'erro');
+    } finally {
+      btnConfirmar.disabled = false;
+    }
+  };
+
+  const _initBotaoMinhaSenha = () => {
+    const btnAbrir = document.getElementById('btn-minha-senha');
+    if (btnAbrir && !btnAbrir.dataset.bind) {
+      btnAbrir.dataset.bind = '1';
+      btnAbrir.addEventListener('click', () => {
+        _limparModalMinhaSenha();
+        UI.openModal('modal-minha-senha');
+      });
+    }
+
+    const btnConfirmar = document.getElementById('btn-confirmar-minha-senha');
+    if (btnConfirmar && !btnConfirmar.dataset.bind) {
+      btnConfirmar.dataset.bind = '1';
+      btnConfirmar.addEventListener('click', _salvarMinhaSenha);
+    }
+
+    const form = document.getElementById('form-minha-senha');
+    if (form && !form.dataset.bind) {
+      form.dataset.bind = '1';
+      form.addEventListener('submit', (e) => { e.preventDefault(); _salvarMinhaSenha(); });
+    }
+
+    document.querySelectorAll('[data-fecha="modal-minha-senha"]').forEach((btn) => {
+      if (btn.dataset.bind) return;
+      btn.dataset.bind = '1';
+      btn.addEventListener('click', () => UI.closeModal('modal-minha-senha'));
+    });
   };
 
   // ===== SPINNER INICIAL =====
@@ -153,6 +246,7 @@ const AUTH = (() => {
         _preencherIdentidade(sessao);
         _configurarMenuPorPerfil(sessao);
         _mostrarApp();
+        _initBotaoMinhaSenha();
         ROUTER.init();
         ROUTER.navigate('dashboard');
       } catch (err) {
@@ -176,6 +270,7 @@ const AUTH = (() => {
       _preencherIdentidade(sessao);
       _configurarMenuPorPerfil(sessao);
       _mostrarApp();
+      _initBotaoMinhaSenha();
       ROUTER.init();
       ROUTER.navigate('dashboard');
     } else {

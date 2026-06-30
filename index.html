@@ -137,6 +137,7 @@
       </nav>
 
       <div class="sidebar-footer">
+        <button class="btn-secundario w-full mb-2" id="btn-minha-senha">🔑 Alterar Senha</button>
         <button class="btn-logout" id="btn-logout">🚪 Sair</button>
       </div>
     </aside>
@@ -185,6 +186,37 @@
       <div class="modal-footer">
         <button class="btn btn-secundario" id="alerta-fechar">Fechar</button>
         <button class="btn btn-alerta"     id="alerta-ver-contas">Ver Contas a Pagar →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: ALTERAR MINHA SENHA ===== -->
+  <div id="modal-minha-senha" class="modal-overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Alterar Senha</h3>
+        <button class="modal-fechar" data-fecha="modal-minha-senha">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-minha-senha" novalidate autocomplete="off">
+          <div class="form-group">
+            <label class="form-label" for="ms-senha-atual">Senha Atual <span class="obrigatorio">*</span></label>
+            <input id="ms-senha-atual" type="password" class="form-input" placeholder="••••••••" autocomplete="current-password" />
+          </div>
+          <div class="form-group mt-2">
+            <label class="form-label" for="ms-nova-senha">Nova Senha <span class="obrigatorio">*</span></label>
+            <input id="ms-nova-senha" type="password" class="form-input" placeholder="Mínimo 6 caracteres" autocomplete="new-password" />
+          </div>
+          <div class="form-group mt-2">
+            <label class="form-label" for="ms-confirmar-senha">Confirmar Nova Senha <span class="obrigatorio">*</span></label>
+            <input id="ms-confirmar-senha" type="password" class="form-input" placeholder="Repita a nova senha" autocomplete="new-password" />
+          </div>
+          <p class="text-xs mb-4" id="ms-aviso" style="color:#6c757d"></p>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secundario" data-fecha="modal-minha-senha">Cancelar</button>
+        <button class="btn btn-primario" id="btn-confirmar-minha-senha">Alterar</button>
       </div>
     </div>
   </div>

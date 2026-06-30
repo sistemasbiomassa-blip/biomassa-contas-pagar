@@ -83,10 +83,12 @@ const CATEGORIAS = (() => {
   // ===== ESTRUTURA HTML PRINCIPAL =====
 
   const _renderHtml = () => {
+    const podeEditar = AUTH.isAdmin() || AUTH.isFinanceiro();
+
     document.getElementById('main-content').innerHTML = `
       <div class="toolbar">
         <span class="toolbar-titulo">Categorias</span>
-        <button class="btn btn-primario" id="btn-nova-categoria">+ Nova Categoria</button>
+        ${podeEditar ? `<button class="btn btn-primario" id="btn-nova-categoria">+ Nova Categoria</button>` : ''}
       </div>
 
       <div class="categorias-grid" id="grid-categorias">
@@ -170,6 +172,9 @@ const CATEGORIAS = (() => {
     const grid = document.getElementById('grid-categorias');
     if (!grid) return;
 
+    const podeEditar = AUTH.isAdmin() || AUTH.isFinanceiro();
+    const podeToggle  = AUTH.isAdmin();
+
     if (!dados.length) {
       grid.innerHTML = '<p class="text-center" style="grid-column:1/-1;color:#6c757d;padding:2rem">Nenhuma categoria cadastrada.</p>';
       return;
@@ -190,6 +195,13 @@ const CATEGORIAS = (() => {
       const labelToggle = cat.ativo ? 'Desativar' : 'Reativar';
       const iconeToggle = cat.ativo ? '🚫' : '✅';
 
+      const btnEditar = podeEditar
+        ? `<button class="btn-icone" data-action="editar" data-id="${cat.id}" title="Editar categoria">✏️</button>`
+        : '';
+      const btnToggle = podeToggle
+        ? `<button class="btn-icone" data-action="toggle" data-id="${cat.id}" data-ativo="${cat.ativo}" title="${labelToggle}">${iconeToggle}</button>`
+        : '';
+
       return `
         <div class="categoria-card${cat.ativo ? '' : ' inativa'}" data-id="${cat.id}">
           <div class="categoria-card-topo">
@@ -202,10 +214,7 @@ const CATEGORIAS = (() => {
 
           <div class="categoria-card-rodape">
             ${statusBadge}
-            <span class="acoes">
-              <button class="btn-icone" data-action="editar" data-id="${cat.id}" title="Editar categoria">✏️</button>
-              <button class="btn-icone" data-action="toggle" data-id="${cat.id}" data-ativo="${cat.ativo}" title="${labelToggle}">${iconeToggle}</button>
-            </span>
+            <span class="acoes">${btnEditar}${btnToggle}</span>
           </div>
         </div>
       `;
@@ -387,8 +396,8 @@ const CATEGORIAS = (() => {
   // ===== PUBLIC API =====
 
   const init = async () => {
-    // Apenas ADMIN gerencia categorias (tabela de permissões do CONTEXT.md)
-    if (!AUTH.requerPerfil([CONFIG.perfis.ADMIN])) return;
+    // ADMIN e FINANCEIRO podem gerenciar categorias; desativação é restrita ao ADMIN
+    if (!AUTH.requerPerfil([CONFIG.perfis.ADMIN, CONFIG.perfis.FINANCEIRO])) return;
 
     _renderHtml();
     _bindEventos();

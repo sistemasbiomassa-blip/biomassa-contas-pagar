@@ -109,6 +109,7 @@ function doPost(e) {
       case 'updateUsuario':                         data = _actionAtualizarUsuario(body);    break;
       case 'redefinirSenha':                        data = _actionRedefinirSenha(body);      break;
       case 'toggleUsuario':                         data = _actionToggleUsuario(body);       break;
+      case 'alterarMinhaSenha':                     data = _actionAlterarMinhaSenha(body);   break;
 
       default:
         return _erro(`Ação POST desconhecida: "${action}"`);
@@ -844,6 +845,27 @@ function _actionToggleUsuario(body) {
   const ok    = _updateById('USUARIOS', body.id, { ATIVO: ativo });
   if (!ok) throw new Error('Usuário não encontrado.');
   return { ativo };
+}
+
+// Permite que o próprio usuário logado troque sua senha, mediante confirmação da senha atual
+function _actionAlterarMinhaSenha(body) {
+  _requerCampos(body, ['login', 'senhaAtual', 'novaSenha']);
+
+  if (String(body.novaSenha).length < 6) {
+    throw new Error('A nova senha deve ter no mínimo 6 caracteres.');
+  }
+
+  const usuarios = _getAbaDados('USUARIOS');
+  const u = usuarios.find(r => String(r.LOGIN).toLowerCase() === String(body.login).toLowerCase());
+  if (!u) throw new Error('Usuário não encontrado.');
+
+  if (String(u.SENHA) !== _hashSenha(body.senhaAtual)) {
+    throw new Error('Senha atual incorreta.');
+  }
+
+  const ok = _updateById('USUARIOS', u.ID, { SENHA: _hashSenha(body.novaSenha) });
+  if (!ok) throw new Error('Falha ao alterar senha.');
+  return { alterado: true };
 }
 
 // ─────────────────────────────────────────────

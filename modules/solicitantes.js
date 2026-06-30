@@ -46,7 +46,7 @@ const SOLICITANTES = (() => {
   // ===== ESTRUTURA HTML =====
 
   const _renderHtml = () => {
-    const isAdmin = AUTH.isAdmin();
+    const podeEditar = AUTH.isAdmin() || AUTH.isFinanceiro();
 
     document.getElementById('main-content').innerHTML = `
       <div class="toolbar">
@@ -62,7 +62,7 @@ const SOLICITANTES = (() => {
 
         <span id="sol-count" class="toolbar-count"></span>
 
-        ${isAdmin ? `
+        ${podeEditar ? `
           <button class="btn btn-primario" id="btn-novo-solicitante">+ Novo Solicitante</button>
         ` : ''}
       </div>
@@ -175,7 +175,8 @@ const SOLICITANTES = (() => {
   // ===== RENDERIZAÇÃO DA TABELA =====
 
   const _renderTabela = (dados) => {
-    const isAdmin = AUTH.isAdmin();
+    const podeEditar = AUTH.isAdmin() || AUTH.isFinanceiro();
+    const podeToggle  = AUTH.isAdmin();
 
     const countEl = document.getElementById('sol-count');
     if (countEl) {
@@ -203,13 +204,13 @@ const SOLICITANTES = (() => {
         label: 'Ações',
         classe: 'text-center',
         formato: (id, linha) => {
-          const btnEditar = isAdmin
+          const btnEditar = podeEditar
             ? `<button class="btn-icone" data-action="editar" data-id="${id}" title="Editar solicitante">✏️</button>`
             : '';
 
           const labelToggle = linha.ativo ? 'Desativar' : 'Reativar';
           const iconeToggle = linha.ativo ? '🚫' : '✅';
-          const btnToggle   = isAdmin
+          const btnToggle   = podeToggle
             ? `<button class="btn-icone" data-action="toggle" data-id="${id}" data-ativo="${linha.ativo}" title="${labelToggle}">${iconeToggle}</button>`
             : '';
 
