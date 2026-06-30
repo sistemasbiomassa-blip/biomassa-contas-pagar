@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Biomassa Chaparini — Contas a Pagar</title>
+
+  <!-- CSS: ordem importa (base → layout → components) -->
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+
+  <!-- jsPDF + AutoTable (CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+
+  <!-- ===== SPINNER INICIAL (visível até AUTH.inicializar() terminar) ===== -->
+  <div id="init-overlay">
+    <div class="init-logo">
+      <img src="Logo_Biomassa.jpeg" alt="Biomassa Chaparini" class="init-logo-img" />
+      <div class="init-sub">Contas a Pagar</div>
+    </div>
+    <div class="spinner init-spinner"></div>
+  </div>
+
+  <!-- ===== TELA DE LOGIN ===== -->
+  <div id="login-screen" class="hidden">
+    <div class="login-card">
+
+      <div class="login-logo">
+        <img src="Logo_Biomassa.jpeg" alt="Biomassa Chaparini" class="login-logo-img" />
+        <p>Sistema de Contas a Pagar</p>
+      </div>
+
+      <!-- Mensagem de erro inline -->
+      <div id="login-erro" class="login-erro hidden"></div>
+
+      <form id="form-login" novalidate>
+        <div class="form-group">
+          <label class="form-label" for="input-login">Usuário</label>
+          <input
+            id="input-login"
+            type="text"
+            class="form-input"
+            placeholder="seu.login"
+            autocomplete="username"
+            required
+          />
+        </div>
+
+        <div class="form-group mt-2">
+          <label class="form-label" for="input-senha">Senha</label>
+          <input
+            id="input-senha"
+            type="password"
+            class="form-input"
+            placeholder="••••••••"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+
+        <button type="submit" class="btn btn-primario w-full mt-4" id="btn-entrar">
+          Entrar
+        </button>
+      </form>
+
+      <!-- Dica de credenciais — visível apenas em modo demo (sem API_URL) -->
+      <div id="login-dica-demo" class="login-dica hidden">
+        <strong>Modo demonstração</strong>
+        <ul>
+          <li><code>admin</code> / <code>admin123</code> — ADMIN</li>
+          <li><code>cdiretor</code> / <code>dir123</code> — DIRETOR</li>
+          <li><code>afinanceiro</code> / <code>fin123</code> — FINANCEIRO</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===== APP PRINCIPAL (oculto até o login) ===== -->
+  <div id="app" class="hidden">
+
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="sidebar-logo">
+        <div class="sidebar-logo-img">
+          <img src="Logo_Biomassa.jpeg" alt="Biomassa Chaparini" />
+        </div>
+        <div>
+          <div class="sistema-nome">Biomassa Chaparini</div>
+          <div class="sistema-sub">Contas a Pagar</div>
+          <div class="sistema-versao">v1.0.0</div>
+        </div>
+      </div>
+
+      <div class="sidebar-usuario">
+        <div class="usuario-nome"  id="sidebar-usuario-nome">—</div>
+        <div class="usuario-perfil" id="sidebar-usuario-perfil">—</div>
+      </div>
+
+      <nav id="nav-menu">
+
+        <div class="nav-item" data-modulo="dashboard" data-titulo="Dashboard">
+          <span class="nav-icon">📊</span> Dashboard
+        </div>
+
+        <div class="nav-item" data-modulo="contas" data-titulo="Contas a Pagar">
+          <span class="nav-icon">💰</span> Contas a Pagar
+        </div>
+
+        <div class="nav-item" data-modulo="fornecedores" data-titulo="Fornecedores">
+          <span class="nav-icon">🏢</span> Fornecedores
+        </div>
+
+        <div class="nav-item" data-modulo="solicitantes" data-titulo="Solicitantes">
+          <span class="nav-icon">👥</span> Solicitantes
+        </div>
+
+        <div class="nav-item" data-modulo="relatorio" data-titulo="Relatórios">
+          <span class="nav-icon">📈</span> Relatórios
+        </div>
+
+        <!-- Itens exclusivos de ADMIN — ocultados por auth.js para outros perfis -->
+        <div class="nav-separador" id="nav-sep-admin"></div>
+
+        <div class="nav-item" data-modulo="categorias" data-titulo="Categorias" id="nav-categorias">
+          <span class="nav-icon">🏷️</span> Categorias
+        </div>
+
+        <div class="nav-item" data-modulo="usuarios" data-titulo="Usuários" id="nav-usuarios">
+          <span class="nav-icon">👤</span> Usuários
+        </div>
+
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="btn-logout" id="btn-logout">🚪 Sair</button>
+      </div>
+    </aside>
+
+    <!-- Overlay para fechar sidebar em mobile -->
+    <div id="sidebar-overlay"></div>
+
+    <!-- Área principal -->
+    <div id="main-wrapper">
+
+      <header id="header">
+        <!-- Esquerda: hambúrguer + título do módulo -->
+        <div class="header-esq">
+          <button id="btn-menu-toggle" aria-label="Abrir menu">☰</button>
+          <span id="header-titulo">Dashboard</span>
+        </div>
+
+        <!-- Direita: nome e perfil do usuário logado -->
+        <div class="header-dir">
+          <div class="header-usuario-info">
+            <div class="header-usuario-nome"   id="header-usuario-nome">—</div>
+            <div class="header-usuario-perfil" id="header-usuario-perfil">—</div>
+          </div>
+        </div>
+      </header>
+
+      <main id="main-content">
+        <!-- Conteúdo injetado pelos módulos -->
+      </main>
+
+    </div>
+
+  </div>
+
+  <!-- ===== MODAL DE ALERTA DE VENCIMENTO (abre automaticamente após login) ===== -->
+  <div id="modal-alerta-vencimento" class="modal-overlay hidden">
+    <div class="modal modal-alerta-vencimento">
+      <div class="modal-header modal-header-alerta">
+        <div class="alerta-header-icone">⚠️</div>
+        <div>
+          <h3 id="alerta-titulo">Contas Urgentes</h3>
+          <p id="alerta-subtitulo" class="alerta-subtitulo"></p>
+        </div>
+      </div>
+      <div class="modal-body" id="alerta-vencimento-body"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secundario" id="alerta-fechar">Fechar</button>
+        <button class="btn btn-alerta"     id="alerta-ver-contas">Ver Contas a Pagar →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL DE CONFIRMAÇÃO GLOBAL ===== -->
+  <div id="modal-confirmacao" class="modal-overlay hidden">
+    <div class="modal modal-sm modal-confirmacao">
+      <div class="modal-header">
+        <h3>Confirmar ação</h3>
+      </div>
+      <div class="modal-body">
+        <p class="confirmacao-mensagem" id="confirmacao-mensagem"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secundario" id="confirmacao-nao">Cancelar</button>
+        <button class="btn btn-perigo"     id="confirmacao-sim">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== LOADING OVERLAY GLOBAL (chamadas de API) ===== -->
+  <div id="loading-overlay" class="loading-overlay hidden">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- ===== CONTAINER DE TOASTS ===== -->
+  <div id="toast-container"></div>
+
+  <!-- ===== SCRIPTS (ordem: config → api → ui → auth → pdf → router → módulos) ===== -->
+  <script src="config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/pdf.js"></script>
+  <script src="js/router.js"></script>
+
+  <!-- Módulos -->
+  <script src="modules/dashboard.js"></script>
+  <script src="modules/fornecedores.js"></script>
+  <script src="modules/contas.js"></script>
+  <script src="modules/categorias.js"></script>
+  <script src="modules/relatorio.js"></script>
+  <script src="modules/usuarios.js"></script>
+  <script src="modules/solicitantes.js"></script>
+
+  <!-- Inicialização: dispara após todos os scripts carregarem -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => AUTH.inicializar());
+  </script>
+
+</body>
+</html>
