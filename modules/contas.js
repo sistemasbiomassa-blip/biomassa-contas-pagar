@@ -44,16 +44,16 @@ const CONTAS = (() => {
     const add  = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
     const mes  = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     return [
-      { id: 'CT001', fornecedor: 'Mecânica Central',        categoria: 'Manutenção',     solicitante: 'Carlos Eduardo',   descricao: 'Troca de pneus dianteiros — cam. 02', valor: 1100.00, vencimento: fmt(add(hoje,-8)),  competencia: mes(add(hoje,-8)),  dataPagamento: '',              formaPagamento: '', numDocumento: 'NF-1234', observacao: '',                         usuario: 'admin',      dataRegistro: fmt(add(hoje,-15)) },
-      { id: 'CT002', fornecedor: 'Escritório Contábil XYZ', categoria: 'Administrativo', solicitante: 'Ana Paula Santos', descricao: 'Honorários contábeis — mês anterior',  valor: 1500.00, vencimento: fmt(add(hoje,-3)),  competencia: mes(add(hoje,-3)),  dataPagamento: '',              formaPagamento: '', numDocumento: '',        observacao: '',                         usuario: 'financeiro', dataRegistro: fmt(add(hoje,-10)) },
-      { id: 'CT003', fornecedor: 'Posto São João',          categoria: 'Combustível',    solicitante: 'Carlos Eduardo',   descricao: 'Abastecimento frota — semana 23',      valor: 850.00,  vencimento: fmt(hoje),          competencia: mes(hoje),          dataPagamento: '',              formaPagamento: '', numDocumento: 'NF-5678', observacao: '',                         usuario: 'financeiro', dataRegistro: fmt(add(hoje,-7))  },
-      { id: 'CT004', fornecedor: 'Posto São João',          categoria: 'Combustível',    solicitante: 'Carlos Eduardo',   descricao: 'Abastecimento frota — semana 24',      valor: 920.00,  vencimento: fmt(add(hoje,5)),   competencia: mes(hoje),          dataPagamento: '',              formaPagamento: '', numDocumento: '',        observacao: '',                         usuario: 'financeiro', dataRegistro: fmt(add(hoje,-2))  },
-      { id: 'CT005', fornecedor: 'Mecânica Central',        categoria: 'Manutenção',     solicitante: 'Ana Paula Santos', descricao: 'Revisão 50.000 km — cam. 03',          valor: 2200.00, vencimento: fmt(add(hoje,10)),  competencia: mes(hoje),          dataPagamento: '',              formaPagamento: '', numDocumento: 'OS-0891', observacao: 'Incluir troca de filtros', usuario: 'admin',      dataRegistro: fmt(add(hoje,-1))  },
-      { id: 'CT006', fornecedor: 'Escritório Contábil XYZ', categoria: 'Administrativo', solicitante: 'Beatriz Rocha',    descricao: 'DARF IRPJ — 2º trimestre',             valor: 3800.00, vencimento: fmt(add(hoje,18)),  competencia: mes(hoje),          dataPagamento: '',              formaPagamento: '', numDocumento: '',        observacao: '',                         usuario: 'admin',      dataRegistro: fmt(hoje)          },
-      { id: 'CT007', fornecedor: 'Posto São João',          categoria: 'Combustível',    solicitante: 'Carlos Eduardo',   descricao: 'Abastecimento frota — semana 22',      valor: 780.00,  vencimento: fmt(add(hoje,-12)), competencia: mes(add(hoje,-12)), dataPagamento: fmt(add(hoje,-12)), formaPagamento: 'PIX',           numDocumento: '', observacao: '', usuario: 'financeiro', dataRegistro: fmt(add(hoje,-18)) },
-      { id: 'CT008', fornecedor: 'Mecânica Central',        categoria: 'Manutenção',     solicitante: 'Ana Paula Santos', descricao: 'Manutenção preventiva — frota',        valor: 1800.00, vencimento: fmt(add(hoje,-10)), competencia: mes(add(hoje,-10)), dataPagamento: fmt(add(hoje,-10)), formaPagamento: 'Transferência', numDocumento: 'NF-1105', observacao: '', usuario: 'admin', dataRegistro: fmt(add(hoje,-20)) },
-      { id: 'CT009', fornecedor: 'Escritório Contábil XYZ', categoria: 'Administrativo', solicitante: 'Beatriz Rocha',    descricao: 'Honorários contábeis — 2 meses atrás', valor: 1500.00, vencimento: fmt(add(hoje,-35)), competencia: mes(add(hoje,-35)), dataPagamento: fmt(add(hoje,-35)), formaPagamento: 'Transferência', numDocumento: '', observacao: '', usuario: 'financeiro', dataRegistro: fmt(add(hoje,-42)) },
-      { id: 'CT010', fornecedor: 'Posto São João',          categoria: 'Combustível',    solicitante: 'Carlos Eduardo',   descricao: 'Abastecimento frota — semana 20',      valor: 650.00,  vencimento: fmt(add(hoje,-25)), competencia: mes(add(hoje,-25)), dataPagamento: fmt(add(hoje,-24)), formaPagamento: 'PIX',           numDocumento: '', observacao: '', usuario: 'financeiro', dataRegistro: fmt(add(hoje,-30)) }
+      { id: 'CT001', fornecedor: 'Mecânica Central',        categoria: 'Manutenção',     solicitante: 'Carlos Eduardo',   descricao: 'Troca de pneus dianteiros — cam. 02', valor: 1100.00, vencimento: fmt(add(hoje,-8)),  competencia: mes(add(hoje,-8)),  dataPagamento: '',              formaPagamento: '', numDocumento: 'NF-1234', observacao: '',                         usuario: 'admin',      dataRegistro: fmt(add(hoje,-15)), jurosMulta: 0 },
+      { id: 'CT002', fornecedor: 'Escritório Contábil XYZ', categoria: 'Administrativo', solicitante: 'Ana Paula Santos', descricao: 'Honorários contábeis — mês anterior',  valor: 1500.00, vencimento: fmt(add(hoje,-3)),  competencia: mes(add(hoje,-3)),  dataPagamento: '',              formaPagamento: '', numDocumento: '',        observacao: '',                         usuario: 'financeiro', dataRegistro: fmt(add(hoje,-10)), jurosMulta: 0 },
+      { id: 'CT003', fornecedor: 'Posto São João',          categoria: 'Combustível',    solicitante: 'Carlos Eduardo',   descricao: 'Abastecimento frota — semana 23',      valor: 850.00,  vencimento: fmt(hoje),          competencia: mes(hoje),          dataPagamento: '',              formaPagamento: '', numDocumento: 'NF-5678', observacao: '',                         usuario: 'financeiro', dataRegistro: fmt(add(hoje,-7)),  jurosMulta: 0 },
+      { id: 'CT004', fornecedor: 'Posto São João',          categoria: 'Combustível',    solicitante: 'Carlos Eduardo',   descricao: 'Abastecimento frota — semana 24',      valor: 920.00,  vencimento: fmt(add(hoje,5)),   competencia: mes(hoje),          dataPagamento: '',              formaPagamento: '', numDocumento: '',        observacao: '',                         usuario: 'financeiro', dataRegistro: fmt(add(hoje,-2)),  jurosMulta: 0 },
+      { id: 'CT005', fornecedor: 'Mecânica Central',        categoria: 'Manutenção',     solicitante: 'Ana Paula Santos', descricao: 'Revisão 50.000 km — cam. 03',          valor: 2200.00, vencimento: fmt(add(hoje,10)),  competencia: mes(hoje),          dataPagamento: '',              formaPagamento: '', numDocumento: 'OS-0891', observacao: 'Incluir troca de filtros', usuario: 'admin',      dataRegistro: fmt(add(hoje,-1)),  jurosMulta: 0 },
+      { id: 'CT006', fornecedor: 'Escritório Contábil XYZ', categoria: 'Administrativo', solicitante: 'Beatriz Rocha',    descricao: 'DARF IRPJ — 2º trimestre',             valor: 3800.00, vencimento: fmt(add(hoje,18)),  competencia: mes(hoje),          dataPagamento: '',              formaPagamento: '', numDocumento: '',        observacao: '',                         usuario: 'admin',      dataRegistro: fmt(hoje),          jurosMulta: 0 },
+      { id: 'CT007', fornecedor: 'Posto São João',          categoria: 'Combustível',    solicitante: 'Carlos Eduardo',   descricao: 'Abastecimento frota — semana 22',      valor: 780.00,  vencimento: fmt(add(hoje,-12)), competencia: mes(add(hoje,-12)), dataPagamento: fmt(add(hoje,-12)), formaPagamento: 'PIX',           numDocumento: '', observacao: '', usuario: 'financeiro', dataRegistro: fmt(add(hoje,-18)), jurosMulta: 0 },
+      { id: 'CT008', fornecedor: 'Mecânica Central',        categoria: 'Manutenção',     solicitante: 'Ana Paula Santos', descricao: 'Manutenção preventiva — frota',        valor: 1800.00, vencimento: fmt(add(hoje,-10)), competencia: mes(add(hoje,-10)), dataPagamento: fmt(add(hoje,-10)), formaPagamento: 'Transferência', numDocumento: 'NF-1105', observacao: '', usuario: 'admin', dataRegistro: fmt(add(hoje,-20)), jurosMulta: 0 },
+      { id: 'CT009', fornecedor: 'Escritório Contábil XYZ', categoria: 'Administrativo', solicitante: 'Beatriz Rocha',    descricao: 'Honorários contábeis — 2 meses atrás', valor: 1500.00, vencimento: fmt(add(hoje,-35)), competencia: mes(add(hoje,-35)), dataPagamento: fmt(add(hoje,-35)), formaPagamento: 'Transferência', numDocumento: '', observacao: '', usuario: 'financeiro', dataRegistro: fmt(add(hoje,-42)), jurosMulta: 0 },
+      { id: 'CT010', fornecedor: 'Posto São João',          categoria: 'Combustível',    solicitante: 'Carlos Eduardo',   descricao: 'Abastecimento frota — semana 20',      valor: 650.00,  vencimento: fmt(add(hoje,-25)), competencia: mes(add(hoje,-25)), dataPagamento: fmt(add(hoje,-24)), formaPagamento: 'PIX',           numDocumento: '', observacao: '', usuario: 'financeiro', dataRegistro: fmt(add(hoje,-30)), jurosMulta: 15.50 }
     ];
   };
 
@@ -309,6 +309,11 @@ const CONTAS = (() => {
                   <option>Cheque</option>
                 </select>
               </div>
+              <div class="form-group">
+                <label class="form-label" for="pg-juros-multa">Juros/Multa (R$)</label>
+                <input id="pg-juros-multa" type="text" class="form-input" placeholder="0,00" inputmode="numeric" autocomplete="off" />
+                <small class="form-ajuda">Preencha caso o pagamento esteja sendo feito após o vencimento.</small>
+              </div>
             </form>
           </div>
           <div class="modal-footer">
@@ -342,7 +347,7 @@ const CONTAS = (() => {
       const classeRow = status === CONFIG.statusConta.VENCIDO ? 'linha-vencida'
                       : status === 'Vence Hoje'               ? 'linha-vence-hoje'
                       : '';
-      total += conta.valor;
+      total += conta.valor + (conta.jurosMulta || 0);
 
       const podeEditar  = AUTH.isAdmin() || (AUTH.isFinanceiro() && conta.usuario === sessao?.login);
       const podePagar   = (AUTH.isAdmin() || AUTH.isFinanceiro()) && status !== CONFIG.statusConta.PAGO;
@@ -358,7 +363,9 @@ const CONTAS = (() => {
           <td>${conta.categoria}</td>
           <td>${conta.solicitante || '—'}</td>
           <td>${conta.descricao}</td>
-          <td class="text-right">${UI.formatMoeda(conta.valor)}</td>
+          <td class="text-right">${conta.jurosMulta
+            ? `Valor: ${UI.formatMoeda(conta.valor)}<br><small class="texto-suave">Juros/Multa: ${UI.formatMoeda(conta.jurosMulta)}</small><br><strong>Total: ${UI.formatMoeda(conta.valor + conta.jurosMulta)}</strong>`
+            : UI.formatMoeda(conta.valor)}</td>
           <td>${UI.formatData(conta.vencimento)}</td>
           <td class="text-center">${_badgeStatus(status)}</td>
           <td class="text-center"><span class="acoes">${btnEditar}${btnPagar}${btnExcluir}</span></td>
@@ -719,17 +726,19 @@ const CONTAS = (() => {
   // ===== PAGAMENTO =====
 
   const _abrirModalPagamento = (id) => {
-    document.getElementById('pg-id').value    = id;
-    document.getElementById('pg-data').value  = new Date().toISOString().split('T')[0];
-    document.getElementById('pg-forma').value = '';
+    document.getElementById('pg-id').value         = id;
+    document.getElementById('pg-data').value       = new Date().toISOString().split('T')[0];
+    document.getElementById('pg-forma').value      = '';
+    document.getElementById('pg-juros-multa').value = '';
     document.querySelectorAll('#form-pagamento .erro').forEach((el) => el.classList.remove('erro'));
     UI.openModal('modal-pagamento');
   };
 
   const _salvarPagamento = async () => {
-    const id    = document.getElementById('pg-id').value;
-    const data  = document.getElementById('pg-data').value;
-    const forma = document.getElementById('pg-forma').value;
+    const id         = document.getElementById('pg-id').value;
+    const data       = document.getElementById('pg-data').value;
+    const forma      = document.getElementById('pg-forma').value;
+    const jurosMulta = _parseMoeda(document.getElementById('pg-juros-multa').value);
 
     document.getElementById('pg-data').classList.toggle('erro', !data);
     document.getElementById('pg-forma').classList.toggle('erro', !forma);
@@ -739,7 +748,7 @@ const CONTAS = (() => {
     btnConfirmar.disabled = true;
 
     try {
-      await API.post('registrarPagamento', { id, dataPagamento: data, formaPagamento: forma });
+      await API.post('registrarPagamento', { id, dataPagamento: data, formaPagamento: forma, jurosMulta });
       UI.showToast('Pagamento registrado com sucesso.', 'sucesso');
       UI.closeModal('modal-pagamento');
       await _carregarDados();
@@ -780,13 +789,15 @@ const CONTAS = (() => {
 
     let total = 0;
     const dadosPdf = _filtrados.map((c) => {
-      total += c.valor;
+      total += c.valor + (c.jurosMulta || 0);
       return {
         fornecedor:  c.fornecedor,
         solicitante: c.solicitante || '—',
         descricao:   c.descricao,
         vencimento:  UI.formatData(c.vencimento),
-        valor:       UI.formatMoeda(c.valor),
+        valor:       c.jurosMulta
+          ? `Valor: ${UI.formatMoeda(c.valor)}\nJuros/Multa: ${UI.formatMoeda(c.jurosMulta)}\nTotal: ${UI.formatMoeda(c.valor + c.jurosMulta)}`
+          : UI.formatMoeda(c.valor),
         status:      _calcularStatus(c)
       };
     });
@@ -852,6 +863,11 @@ const CONTAS = (() => {
     // Máscara no campo valor (à vista)
     _addListener(document.getElementById('ct-valor'), 'input', () =>
       _mascaraMoeda(document.getElementById('ct-valor'))
+    );
+
+    // Máscara no campo juros/multa do pagamento
+    _addListener(document.getElementById('pg-juros-multa'), 'input', () =>
+      _mascaraMoeda(document.getElementById('pg-juros-multa'))
     );
 
     // Máscara no campo valor total (parcelada)

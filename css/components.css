@@ -600,6 +600,17 @@ tr.linha-vence-hoje:hover {
   margin-left: 2px;
 }
 
+.form-ajuda {
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+.texto-suave {
+  font-size: 0.75rem;
+  color: #6c757d;
+  font-weight: 400;
+}
+
 .form-input,
 .form-select,
 .form-textarea {

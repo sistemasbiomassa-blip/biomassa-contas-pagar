@@ -350,6 +350,7 @@ function _serConta(r) {
     competencia:    String(r.COMPETENCIA     || ''),
     dataPagamento:  String(r.DATA_PAGAMENTO  || ''),
     formaPagamento: String(r.FORMA_PAGAMENTO || ''),
+    jurosMulta:     parseFloat(r.JUROS_MULTA) || 0,
     numDocumento:   String(r.NUM_DOCUMENTO   || ''),
     observacao:     String(r.OBSERVACAO      || ''),
     usuario:        String(r.USUARIO         || ''),
@@ -503,7 +504,8 @@ function _actionListarDashboard() {
       descricao:      String(c.DESCRICAO       || ''),
       valor:          parseFloat(c.VALOR)      || 0,
       dataPagamento:  String(c.DATA_PAGAMENTO  || ''),
-      formaPagamento: String(c.FORMA_PAGAMENTO || '')
+      formaPagamento: String(c.FORMA_PAGAMENTO || ''),
+      jurosMulta:     parseFloat(c.JUROS_MULTA) || 0
     }))
   };
 }
@@ -637,6 +639,7 @@ function _actionCriarConta(body) {
     COMPETENCIA:     body.competencia     || '',
     DATA_PAGAMENTO:  '',
     FORMA_PAGAMENTO: '',
+    JUROS_MULTA:     0,
     NUM_DOCUMENTO:   body.numDocumento    || '',
     OBSERVACAO:      body.observacao      || '',
     USUARIO:         body.usuario         || '',
@@ -669,6 +672,7 @@ function _actionCriarContaParcelada(body) {
       COMPETENCIA:     body.competencia     || '',
       DATA_PAGAMENTO:  '',
       FORMA_PAGAMENTO: '',
+      JUROS_MULTA:     0,
       NUM_DOCUMENTO:   body.numDocumento    || '',
       OBSERVACAO:      body.observacao      || '',
       USUARIO:         body.usuario         || '',
@@ -722,7 +726,8 @@ function _actionRegistrarPagamento(body) {
 
   const ok = _updateById('CONTAS', body.id, {
     DATA_PAGAMENTO:  body.dataPagamento,
-    FORMA_PAGAMENTO: body.formaPagamento
+    FORMA_PAGAMENTO: body.formaPagamento,
+    JUROS_MULTA:     parseFloat(body.jurosMulta) || 0
   });
 
   if (!ok) throw new Error('Falha ao registrar pagamento.');
@@ -886,7 +891,7 @@ function setupPlanilha() {
     SOLICITANTES: ['ID', 'NOME', 'DEPARTAMENTO', 'CARGO', 'EMAIL', 'TELEFONE', 'ATIVO'],
     CONTAS:       ['ID', 'FORNECEDOR', 'CATEGORIA', 'SOLICITANTE', 'DESCRICAO', 'VALOR',
                    'VENCIMENTO', 'COMPETENCIA', 'DATA_PAGAMENTO', 'FORMA_PAGAMENTO',
-                   'NUM_DOCUMENTO', 'OBSERVACAO', 'USUARIO', 'DATA_REGISTRO']
+                   'NUM_DOCUMENTO', 'OBSERVACAO', 'USUARIO', 'DATA_REGISTRO', 'JUROS_MULTA']
   };
 
   Object.entries(definicaoAbas).forEach(([nome, colunas]) => {
