@@ -395,21 +395,21 @@ const CONTAS = (() => {
     const cAtual  = catSel?.value;
     const sAtual  = solSel?.value;
 
-    const fornUnicos = [...new Set(_dados.map((c) => c.fornecedor))].sort();
+    const fornUnicos = [...new Set(_dados.map((c) => c.fornecedor))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
     if (fsSel) {
       fsSel.innerHTML = '<option value="">Todos</option>' +
         fornUnicos.map((n) => `<option value="${n}">${n}</option>`).join('');
       fsSel.value = fAtual || '';
     }
 
-    const catUnicas = [...new Set(_dados.map((c) => c.categoria))].sort();
+    const catUnicas = [...new Set(_dados.map((c) => c.categoria))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
     if (catSel) {
       catSel.innerHTML = '<option value="">Todas</option>' +
         catUnicas.map((n) => `<option value="${n}">${n}</option>`).join('');
       catSel.value = cAtual || '';
     }
 
-    const solUnicos = [...new Set(_dados.map((c) => c.solicitante).filter(Boolean))].sort();
+    const solUnicos = [...new Set(_dados.map((c) => c.solicitante).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
     if (solSel) {
       solSel.innerHTML = '<option value="">Todos</option>' +
         solUnicos.map((n) => `<option value="${n}">${n}</option>`).join('');
@@ -493,16 +493,19 @@ const CONTAS = (() => {
     if (fsSel) {
       fsSel.innerHTML = '<option value="">Selecione...</option>' +
         _fornecedores.filter((f) => f.ativo)
+          .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
           .map((f) => `<option value="${f.nome}">${f.nome}</option>`).join('');
     }
     if (catSel) {
       catSel.innerHTML = '<option value="">Selecione...</option>' +
         _categorias.filter((c) => c.ativo)
+          .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
           .map((c) => `<option value="${c.nome}">${c.nome}</option>`).join('');
     }
     if (solSel) {
       solSel.innerHTML = '<option value="">— Selecione —</option>' +
         _solicitantes.filter((s) => s.ativo)
+          .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
           .map((s) => `<option value="${s.nome}">${s.nome}</option>`).join('');
     }
   };

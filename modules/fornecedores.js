@@ -307,7 +307,7 @@ const FORNECEDORES = (() => {
     const sel = document.getElementById('forn-categoria');
     if (!sel) return;
     sel.innerHTML = '<option value="">Nenhuma</option>';
-    _categorias.forEach((cat) => {
+    [..._categorias].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')).forEach((cat) => {
       const opt = document.createElement('option');
       opt.value       = cat.nome;
       opt.textContent = cat.nome;
