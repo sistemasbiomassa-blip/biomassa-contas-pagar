@@ -40,31 +40,55 @@ const API = (() => {
       throw new ErroPassageiro('Resposta inválida do servidor.');
     }
     if (json.status === 'erro') {
+      // O Google às vezes perde a resposta e redireciona o navegador de volta ao
+      // /exec sem parâmetros — o doGet responde "ação desconhecida" com ação vazia
+      if (/^Ação GET desconhecida: ""/.test(json.mensagem || '')) {
+        throw new ErroPassageiro('Resposta perdida pelo servidor do Google.');
+      }
       throw new Error(json.mensagem || 'Ocorreu um erro no servidor.');
     }
     return json.data !== undefined ? json.data : json;
   };
 
-  // Busca na API, repetindo em falhas passageiras do Google.
-  // Só GET é repetido: repetir POST poderia gravar o registro em duplicidade.
+  // O Google às vezes "prende" uma chamada por 20–40 s; abortar e tentar de novo
+  // costuma responder em 2–3 s. Cada número é o limite de uma tentativa.
+  const LIMITES_MS = [10000, 15000, 25000];
+
+  const _ehPassageiro = (err) =>
+    err instanceof ErroPassageiro ||
+    err instanceof TypeError ||          // falha de rede
+    err?.name === 'AbortError';          // estourou o tempo limite
+
+  // Executa fetch com tempo limite e novas tentativas em falhas passageiras.
+  // Só pode ser usado para chamadas que podem ser repetidas sem efeito colateral.
+  const _comTentativas = async (url, opcoes) => {
+    for (let i = 0; ; i++) {
+      const controle = new AbortController();
+      const timer = setTimeout(() => controle.abort(), LIMITES_MS[i]);
+      try {
+        const response = await fetch(url, { ...opcoes, redirect: 'follow', signal: controle.signal });
+        return await _tratarResposta(response);
+      } catch (err) {
+        if (!_ehPassageiro(err) || i === LIMITES_MS.length - 1) {
+          if (err?.name === 'AbortError') throw new Error('O servidor do Google não respondeu. Tente novamente.');
+          throw err;
+        }
+        await new Promise((r) => setTimeout(r, 500 * (i + 1)));
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+  };
+
+  // Consulta (GET) com novas tentativas e cache
   const _buscar = (url) => {
     if (_emAndamento.has(url)) return _emAndamento.get(url);
 
     const geracao = _geracao;
     const promessa = (async () => {
-      const TENTATIVAS = 3;
-      for (let i = 1; ; i++) {
-        try {
-          const response = await fetch(url, { method: 'GET', redirect: 'follow' });
-          const data = await _tratarResposta(response);
-          if (geracao === _geracao) _cache.set(url, { t: Date.now(), data });
-          return data;
-        } catch (err) {
-          const passageiro = err instanceof ErroPassageiro || err instanceof TypeError; // TypeError = falha de rede
-          if (!passageiro || i === TENTATIVAS) throw err;
-          await new Promise((r) => setTimeout(r, 500 * i));
-        }
-      }
+      const data = await _comTentativas(url, { method: 'GET' });
+      if (geracao === _geracao) _cache.set(url, { t: Date.now(), data });
+      return data;
     })();
 
     _emAndamento.set(url, promessa);
@@ -105,17 +129,31 @@ const API = (() => {
     _cache.clear();
   };
 
+  // Ações de POST que só leem dados e podem ser repetidas com segurança
+  const POST_REPETIVEIS = ['login'];
+
   const post = async (action, payload = {}) => {
     if (!CONFIG.API_URL) throw new Error('API_URL não configurada.');
     UI.showLoading();
+    const opcoes = {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' }, // Apps Script aceita texto simples
+      body: JSON.stringify({ action, ...payload })
+    };
     try {
-      const response = await fetch(CONFIG.API_URL, {
-        method: 'POST',
-        redirect: 'follow',
-        headers: { 'Content-Type': 'text/plain' }, // Apps Script aceita texto simples
-        body: JSON.stringify({ action, ...payload })
-      });
-      return await _tratarResposta(response);
+      if (POST_REPETIVEIS.includes(action)) {
+        return await _comTentativas(CONFIG.API_URL, opcoes);
+      }
+      // Gravações NÃO são repetidas nem abortadas: quando a resposta se perde,
+      // o Google normalmente já executou a gravação, e repetir duplicaria o registro
+      try {
+        const response = await fetch(CONFIG.API_URL, { ...opcoes, redirect: 'follow' });
+        return await _tratarResposta(response);
+      } catch (err) {
+        if (!_ehPassageiro(err)) throw err;
+        throw new Error('O servidor do Google não confirmou a operação, mas ela pode ter sido gravada. ' +
+                        'Abra a tela de novo e confira antes de repetir.');
+      }
     } catch (err) {
       CONFIG.debug && console.log('[API.post]', action, err);
       throw err;
