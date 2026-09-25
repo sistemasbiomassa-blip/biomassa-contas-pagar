@@ -16,6 +16,14 @@ const AUTH = (() => {
 
   const limparSessao = () => {
     sessionStorage.clear();
+    API.limparCache();
+  };
+
+  // Busca em segundo plano os dados das outras telas enquanto o dashboard carrega
+  const _preCarregarTelas = (sessao) => {
+    const acoes = ['listarContas', 'listarFornecedores', 'listarCategorias', 'listarSolicitantes'];
+    if (sessao.perfil === CONFIG.perfis.ADMIN) acoes.push('listarUsuarios');
+    API.preCarregar(acoes);
   };
 
   // ===== MOCK LOGIN (usado quando CONFIG.API_URL está vazio) =====
@@ -249,6 +257,7 @@ const AUTH = (() => {
         _initBotaoMinhaSenha();
         ROUTER.init();
         ROUTER.navigate('dashboard');
+        _preCarregarTelas(sessao);
       } catch (err) {
         _mostrarErroLogin(err.message || 'Erro ao fazer login. Tente novamente.');
         document.getElementById('input-senha').value = '';
@@ -273,6 +282,7 @@ const AUTH = (() => {
       _initBotaoMinhaSenha();
       ROUTER.init();
       ROUTER.navigate('dashboard');
+      _preCarregarTelas(sessao);
     } else {
       _mostrarLogin();
     }
