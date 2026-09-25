@@ -61,9 +61,49 @@ const PDF = (() => {
     }
   };
 
+  // jsPDF + AutoTable (~400 KB) só são baixados na primeira vez que alguém gera um PDF,
+  // assim não atrasam nem travam a abertura do sistema
+  let _bibliotecas = null;
+
+  const LIMITE_DOWNLOAD_MS = 20000; // conexão travada não pode deixar a tela de carregamento aberta para sempre
+
+  const _carregarScript = (src) => new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    const timer = setTimeout(() => {
+      script.remove();
+      reject(new Error(`Tempo esgotado ao baixar ${src}`));
+    }, LIMITE_DOWNLOAD_MS);
+    script.src = src;
+    script.onload = () => { clearTimeout(timer); resolve(); };
+    script.onerror = () => { clearTimeout(timer); reject(new Error(`Falha ao baixar ${src}`)); };
+    document.head.appendChild(script);
+  });
+
+  const _carregarBibliotecas = () => {
+    if (window.jspdf?.jsPDF?.API?.autoTable) return Promise.resolve();
+    if (!_bibliotecas) {
+      // Em sequência: o AutoTable precisa do jsPDF já carregado
+      _bibliotecas = CONFIG.PDF_LIBS
+        .reduce((anterior, src) => anterior.then(() => _carregarScript(src)), Promise.resolve())
+        .catch((err) => { _bibliotecas = null; throw err; }); // permite tentar de novo
+    }
+    return _bibliotecas;
+  };
+
   // gerar(titulo, colunas, dados, orientacao, opcoesExtra)
   // opcoesExtra: { rodapeTexto } — texto abaixo da tabela (totalizador)
-  const gerar = (titulo, colunas, dados, orientacao = 'p', opcoesExtra = {}) => {
+  const gerar = async (titulo, colunas, dados, orientacao = 'p', opcoesExtra = {}) => {
+    UI.showLoading();
+    try {
+      await _carregarBibliotecas();
+    } catch (err) {
+      CONFIG.debug && console.log('[PDF.gerar]', err);
+      UI.showToast('Não foi possível carregar o gerador de PDF. Verifique a internet e tente de novo.', 'erro');
+      return;
+    } finally {
+      UI.hideLoading();
+    }
+
     const { jsPDF } = window.jspdf;
     const doc     = new jsPDF({ orientation: orientacao, unit: 'mm', format: 'a4' });
     const largura = doc.internal.pageSize.getWidth();

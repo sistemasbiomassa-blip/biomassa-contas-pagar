@@ -110,6 +110,15 @@ const CONFIG = {
 - O tratamento de erros é consistente — todos os erros da API chegam ao módulo como exceções JavaScript normais
 - Em modo demo, é trivial interceptar as chamadas e retornar dados mockados
 
+**Desempenho e instabilidade do Google.** Cada chamada ao Apps Script custa de 1 a 4 s e, em alguns períodos, 30–60 s ou uma resposta perdida (404). Por isso o `api.js`:
+
+- busca contas, fornecedores, categorias e solicitantes numa **única chamada** (`carregarDados`); `API.get('listarContas')` etc. devolvem a parte correspondente. O dashboard é calculado na tela a partir das contas;
+- **guarda os dados no navegador** (`localStorage`, apagado no logout): até 1 min usa direto; até 10 min abre na hora e atualiza em segundo plano; acima disso espera o servidor por até 6 s e, se ele não responder, mostra o último dado com um aviso. Se chegarem dados diferentes em segundo plano, aparece o botão **🔄 Atualizar dados** no cabeçalho;
+- depois de qualquer gravação, a próxima leitura sempre consulta o servidor;
+- **repete só consultas e login, e só em erro** (404, página de erro, resposta perdida). Chamadas lentas não são canceladas — o Google continua executando mesmo assim. **Gravações nunca são repetidas**, porque poderiam duplicar registros.
+
+Cada resposta do `Code.gs` traz o campo `ms` (tempo de execução do script), útil para saber se a demora é do script/planilha ou da infraestrutura do Google. Para investigar a planilha, execute `diagnosticoSistema()` no editor do Apps Script.
+
 #### `js/auth.js` — Sessão e identidade
 
 Gerencia o ciclo de vida da sessão usando `sessionStorage` (não `localStorage`). A escolha do `sessionStorage` é intencional: a sessão expira quando o usuário fecha a aba, o que é mais seguro para um sistema financeiro.

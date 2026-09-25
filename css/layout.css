@@ -319,6 +319,24 @@
   text-align: right;
 }
 
+/* Botão "Atualizar dados": aparece quando o servidor tem dados mais novos que os da tela */
+.aviso-dados-novos {
+  background: var(--fundo-card);
+  color: var(--cor-primaria);
+  border: none;
+  border-radius: var(--radius);
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: var(--sombra);
+}
+
+.aviso-dados-novos:hover {
+  background: #e8f5e9;
+}
+
 .header-usuario-nome {
   font-size: 0.875rem;
   font-weight: 600;

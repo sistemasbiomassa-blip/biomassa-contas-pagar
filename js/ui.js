@@ -2,6 +2,8 @@
 
 const UI = (() => {
   let _loadingAtivo = 0; // contador para chamadas aninhadas
+  let _timerLoadingMsg = null;
+  const LOADING_MSG_APOS_MS = 8000; // depois disso, explica que a demora é do servidor
 
   // ===== TOAST =====
   const showToast = (mensagem, tipo = 'sucesso') => {
@@ -80,11 +82,18 @@ const UI = (() => {
     _loadingAtivo++;
     const overlay = document.getElementById('loading-overlay');
     if (overlay) overlay.classList.remove('hidden');
+    if (_loadingAtivo === 1) {
+      _timerLoadingMsg = setTimeout(() => {
+        document.getElementById('loading-msg')?.classList.remove('hidden');
+      }, LOADING_MSG_APOS_MS);
+    }
   };
 
   const hideLoading = () => {
     _loadingAtivo = Math.max(0, _loadingAtivo - 1);
     if (_loadingAtivo === 0) {
+      clearTimeout(_timerLoadingMsg);
+      document.getElementById('loading-msg')?.classList.add('hidden');
       const overlay = document.getElementById('loading-overlay');
       if (overlay) overlay.classList.add('hidden');
     }

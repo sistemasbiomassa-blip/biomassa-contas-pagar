@@ -28,6 +28,55 @@ const DASHBOARD = (() => {
     return `<span>${dias}d</span>`;
   };
 
+  // KPIs e listas calculados a partir das contas (mesma regra da ação listarDashboard do Code.gs).
+  // Calcular aqui evita uma chamada extra ao servidor: as contas já vêm na carga única de dados.
+  const _calcularDashboard = (contas) => {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    // Janela "essa semana": amanhã até +7 dias a partir de hoje
+    const fimSemana = new Date(hoje);
+    fimSemana.setDate(hoje.getDate() + 7);
+
+    // Janela "este mês" para contas pagas
+    const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    const fimMes    = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+
+    const kpi = {
+      vencidos: { count: 0, total: 0 },
+      hoje:     { count: 0, total: 0 },
+      semana:   { count: 0, total: 0 },
+      pagosMes: { count: 0, total: 0 }
+    };
+    const naoPagas = [];
+    const pagas    = [];
+
+    contas.forEach((c) => {
+      const valor = parseFloat(c.valor) || 0;
+      const venc  = new Date((c.vencimento || '') + 'T00:00:00');
+
+      if (c.dataPagamento) {
+        const dtPago = new Date(c.dataPagamento + 'T00:00:00');
+        if (dtPago >= inicioMes && dtPago <= fimMes) {
+          kpi.pagosMes.count++;
+          kpi.pagosMes.total += valor;
+        }
+        pagas.push(c);
+      } else {
+        if      (venc < hoje)                       { kpi.vencidos.count++; kpi.vencidos.total += valor; }
+        else if (venc.getTime() === hoje.getTime()) { kpi.hoje.count++;     kpi.hoje.total     += valor; }
+        else if (venc <= fimSemana)                 { kpi.semana.count++;   kpi.semana.total   += valor; }
+        naoPagas.push(c);
+      }
+    });
+
+    // Mais urgentes primeiro / pagamentos mais recentes primeiro
+    naoPagas.sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || ''));
+    pagas.sort((a, b) => (b.dataPagamento || '').localeCompare(a.dataPagamento || ''));
+
+    return { kpi, proximasVencer: naoPagas.slice(0, 10), ultimasPagas: pagas.slice(0, 5) };
+  };
+
   // Dados mockados para uso enquanto API_URL não está configurada
   const _mockData = () => {
     const hoje = new Date();
@@ -310,7 +359,7 @@ const DASHBOARD = (() => {
       CONFIG.debug && console.log('[DASHBOARD] modo mock — defina CONFIG.API_URL para usar a API real');
     } else {
       try {
-        dados = await API.get('listarDashboard');
+        dados = _calcularDashboard(await API.get('listarContas'));
       } catch (err) {
         UI.showToast('Erro ao carregar dados do dashboard.', 'erro');
         // Nunca exibe dados de exemplo em produção: mostra o painel zerado

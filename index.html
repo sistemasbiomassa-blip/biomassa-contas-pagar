@@ -10,9 +10,7 @@
   <link rel="stylesheet" href="css/layout.css" />
   <link rel="stylesheet" href="css/components.css" />
 
-  <!-- jsPDF + AutoTable (CDN) — defer: não bloqueia a abertura da página; só é usado ao gerar PDF -->
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <!-- jsPDF + AutoTable: carregados sob demanda por js/pdf.js (URLs em config.js) -->
 </head>
 <body>
 
@@ -157,6 +155,8 @@
 
         <!-- Direita: nome e perfil do usuário logado -->
         <div class="header-dir">
+          <!-- Aparece quando chegam dados mais novos do servidor em segundo plano -->
+          <button id="aviso-dados-novos" class="aviso-dados-novos hidden" type="button">🔄 Atualizar dados</button>
           <div class="header-usuario-info">
             <div class="header-usuario-nome"   id="header-usuario-nome">—</div>
             <div class="header-usuario-perfil" id="header-usuario-perfil">—</div>
@@ -240,6 +240,8 @@
   <!-- ===== LOADING OVERLAY GLOBAL (chamadas de API) ===== -->
   <div id="loading-overlay" class="loading-overlay hidden">
     <div class="spinner"></div>
+    <!-- Aparece se a espera passar de alguns segundos (servidor do Google lento) -->
+    <p id="loading-msg" class="loading-msg hidden">O servidor do Google está demorando para responder. Aguarde…</p>
   </div>
 
   <!-- ===== CONTAINER DE TOASTS ===== -->

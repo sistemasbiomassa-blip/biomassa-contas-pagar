@@ -62,6 +62,9 @@ const ROUTER = (() => {
       mainContent.classList.remove('modulo-saindo');
       mainContent.classList.add('modulo-entrando');
 
+      // A nova tela já abre com os dados mais recentes
+      document.getElementById('aviso-dados-novos')?.classList.add('hidden');
+
       // Atualiza item de menu ativo
       document.querySelectorAll('.nav-item').forEach((el) => {
         el.classList.toggle('ativo', el.dataset.modulo === nomeModulo);
@@ -97,8 +100,31 @@ const ROUTER = (() => {
     }, 150); // duração do fade out
   };
 
+  // Abre de novo a tela atual (usado quando chegam dados mais novos do servidor)
+  const recarregar = () => {
+    if (!_nomeAtual || _navegando) return;
+    const atual = _nomeAtual;
+    _nomeAtual = null;
+    navigate(atual);
+  };
+
   const init = () => {
     UI.init();
+
+    // Dados mais novos chegaram em segundo plano: oferece recarregar a tela atual
+    // (não recarrega sozinho para não apagar filtros ou formulários em uso)
+    const aviso = document.getElementById('aviso-dados-novos');
+    if (aviso && !aviso.dataset.bind) {
+      aviso.dataset.bind = '1';
+      aviso.addEventListener('click', () => {
+        aviso.classList.add('hidden');
+        recarregar();
+      });
+      // A verificação evita quebrar o menu se o navegador ainda tiver um api.js antigo em cache
+      if (typeof API.aoReceberDadosNovos === 'function') {
+        API.aoReceberDadosNovos(() => aviso.classList.remove('hidden'));
+      }
+    }
 
     // Listeners dos itens de menu
     document.querySelectorAll('.nav-item[data-modulo]').forEach((item) => {
@@ -132,6 +158,7 @@ const ROUTER = (() => {
   return {
     init,
     navigate,
+    recarregar,
     get moduloAtual() { return _moduloAtual; }
   };
 })();

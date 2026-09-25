@@ -25,17 +25,22 @@ const PLANILHA_ID = '';
 // Fuso horário para formatação de datas
 const FUSO = 'America/Sao_Paulo';
 
+// Início da execução atual — cada resposta informa quanto tempo o script levou (campo "ms")
+let _inicioExecucao = Date.now();
+
 // ─────────────────────────────────────────────
 // HANDLER PRINCIPAL — GET
 // ─────────────────────────────────────────────
 
 function doGet(e) {
+  _inicioExecucao = Date.now();
   try {
     const action = (e.parameter.action || '').trim();
     const params = e.parameter;
 
     let data;
     switch (action) {
+      case 'carregarDados':     data = _actionCarregarDados();        break;
       case 'all':               data = _actionAll();                  break;
       case 'listarFornecedores':
       case 'fornecedores':      data = _actionListarFornecedores();   break;
@@ -61,10 +66,23 @@ function doGet(e) {
 // HANDLER PRINCIPAL — POST
 // ─────────────────────────────────────────────
 
+// Ações de POST que não gravam nada e por isso não precisam da trava
+const POST_SOMENTE_LEITURA = ['login'];
+
 function doPost(e) {
+  _inicioExecucao = Date.now();
+  let trava = null;
   try {
     const body   = JSON.parse(e.postData.contents);
     const action = (body.action || '').trim();
+
+    // Uma gravação por vez: sem a trava, dois usuários salvando juntos podiam gerar o mesmo ID
+    if (!POST_SOMENTE_LEITURA.includes(action)) {
+      trava = LockService.getScriptLock();
+      if (!trava.tryLock(20000)) {
+        throw new Error('O sistema está ocupado salvando outro registro. Tente novamente em alguns segundos.');
+      }
+    }
 
     let data;
     switch (action) {
@@ -118,6 +136,14 @@ function doPost(e) {
     return _ok(data);
   } catch (err) {
     return _erro(err.message || 'Erro interno no servidor.');
+  } finally {
+    if (trava) {
+      try {
+        SpreadsheetApp.flush(); // grava tudo antes de liberar a próxima gravação
+      } finally {
+        trava.releaseLock();
+      }
+    }
   }
 }
 
@@ -130,13 +156,13 @@ function doPost(e) {
 
 function _ok(data) {
   return ContentService
-    .createTextOutput(JSON.stringify({ status: 'ok', data: data }))
+    .createTextOutput(JSON.stringify({ status: 'ok', data: data, ms: Date.now() - _inicioExecucao }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
 function _erro(mensagem) {
   return ContentService
-    .createTextOutput(JSON.stringify({ status: 'erro', mensagem: mensagem }))
+    .createTextOutput(JSON.stringify({ status: 'erro', mensagem: mensagem, ms: Date.now() - _inicioExecucao }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -158,6 +184,9 @@ function _aba(nome) {
   return aba;
 }
 
+// Muitas contas repetem as mesmas datas: formata cada data uma única vez por execução
+const _datasFormatadas = {};
+
 // Normaliza valores lidos da planilha:
 //   - Date → string ISO 'YYYY-MM-DD'
 //   - demais valores → sem alteração
@@ -165,7 +194,11 @@ function _aba(nome) {
 // de data, e converter números inteiros transformava valores como 40000 em datas.
 function _formatarValor(v) {
   if (v instanceof Date) {
-    return Utilities.formatDate(v, FUSO, 'yyyy-MM-dd');
+    const chave = v.getTime();
+    if (!(chave in _datasFormatadas)) {
+      _datasFormatadas[chave] = Utilities.formatDate(v, FUSO, 'yyyy-MM-dd');
+    }
+    return _datasFormatadas[chave];
   }
   return v;
 }
@@ -190,12 +223,21 @@ function _getCabecalho(nomeAba) {
   return aba.getRange(1, 1, 1, aba.getLastColumn()).getValues()[0].map(String);
 }
 
-// Próximo ID inteiro = maior ID existente + 1 (ou 1 se vazio)
+// Próximo ID inteiro = maior ID existente + 1 (ou 1 se vazio).
+// Lê só a coluna ID — antes lia e formatava a aba inteira a cada gravação.
 function _proximoId(nomeAba) {
-  const dados = _getAbaDados(nomeAba);
-  if (!dados.length) return 1;
-  const ids = dados.map(r => parseInt(r.ID, 10)).filter(n => Number.isFinite(n));
-  return ids.length ? Math.max(...ids) + 1 : 1;
+  const aba         = _aba(nomeAba);
+  const ultimaLinha = aba.getLastRow();
+  if (ultimaLinha < 2) return 1;
+
+  const colId = _getCabecalho(nomeAba).indexOf('ID') + 1;
+  if (colId === 0) throw new Error(`Coluna "ID" não encontrada em "${nomeAba}".`);
+
+  const maior = aba.getRange(2, colId, ultimaLinha - 1, 1).getValues().reduce((m, linha) => {
+    const n = parseInt(linha[0], 10);
+    return Number.isFinite(n) && n > m ? n : m;
+  }, 0);
+  return maior + 1;
 }
 
 // Adiciona uma linha com ID automático; retorna o ID gerado
@@ -379,6 +421,17 @@ function _serUsuario(r) {
 // ─────────────────────────────────────────────
 // ACTIONS — GET
 // ─────────────────────────────────────────────
+
+// Tudo o que as telas usam, em UMA execução. Cada chamada ao Apps Script tem um custo
+// fixo alto (1–4 s, às vezes muito mais), então uma chamada grande sai melhor que quatro pequenas.
+function _actionCarregarDados() {
+  return {
+    contas:       _getAbaDados('CONTAS').map(_serConta),
+    fornecedores: _getAbaDados('FORNECEDORES').map(_serFornecedor),
+    categorias:   _getAbaDados('CATEGORIAS').map(_serCategoria),
+    solicitantes: _getAbaDados('SOLICITANTES').map(_serSolicitante)
+  };
+}
 
 // Retorna todos os dados em uma única chamada (útil para pré-cache no frontend)
 function _actionAll() {
@@ -652,12 +705,22 @@ function _actionCriarContaParcelada(body) {
     throw new Error('É necessário informar ao menos 2 parcelas.');
   }
 
-  const ids = [];
+  // Valida todas antes de gravar qualquer uma — antes, uma parcela inválida no meio
+  // deixava as anteriores gravadas pela metade
   body.parcelas.forEach((parcela) => {
     if (!parcela.valor || !parcela.vencimento) {
       throw new Error('Cada parcela deve ter valor e vencimento.');
     }
-    const id = _appendComId('CONTAS', {
+  });
+
+  const aba        = _aba('CONTAS');
+  const cabecalho  = _getCabecalho('CONTAS');
+  const primeiroId = _proximoId('CONTAS');
+  const hoje       = _hojeISO();
+
+  const linhas = body.parcelas.map((parcela, i) => {
+    const dados = {
+      ID:              primeiroId + i,
       FORNECEDOR:      body.fornecedor,
       CATEGORIA:       body.categoria,
       SOLICITANTE:     body.solicitante     || '',
@@ -671,11 +734,18 @@ function _actionCriarContaParcelada(body) {
       NUM_DOCUMENTO:   body.numDocumento    || '',
       OBSERVACAO:      body.observacao      || '',
       USUARIO:         body.usuario         || '',
-      DATA_REGISTRO:   _hojeISO()
-    });
-    ids.push(String(id));
+      DATA_REGISTRO:   hoje
+    };
+    return cabecalho.map(col => (dados[col] !== undefined ? dados[col] : ''));
   });
 
+  // Uma única escrita para todas as parcelas (antes: leitura da aba inteira + appendRow por parcela)
+  const inicio = aba.getLastRow() + 1;
+  const faltam = inicio + linhas.length - 1 - aba.getMaxRows();
+  if (faltam > 0) aba.insertRowsAfter(aba.getMaxRows(), faltam);
+  aba.getRange(inicio, 1, linhas.length, cabecalho.length).setValues(linhas);
+
+  const ids = linhas.map((_, i) => String(primeiroId + i));
   return { ids, total: ids.length };
 }
 
@@ -932,6 +1002,66 @@ function setupPlanilha() {
 
   Logger.log('');
   Logger.log('🚀 Setup concluído! Publique o script como Web App e copie a URL para CONFIG.API_URL em config.js.');
+}
+
+// ─────────────────────────────────────────────
+// DIAGNÓSTICO — execute no editor (Executar → diagnosticoSistema) e
+// copie o resultado de "Registro de execução". Não altera nada na planilha.
+// ─────────────────────────────────────────────
+
+function diagnosticoSistema() {
+  const agora = () => Date.now();
+  const VOLATEIS = /\b(NOW|TODAY|RAND|RANDBETWEEN|INDIRECT|OFFSET|IMPORTRANGE|IMPORTXML|IMPORTHTML|IMPORTDATA|IMPORTFEED|QUERY|ARRAYFORMULA|FILTER|GOOGLEFINANCE|GOOGLETRANSLATE)\s*\(/gi;
+  const log = (msg) => Logger.log(msg);
+
+  let t0 = agora();
+  const ss = _planilha();
+  log(`Planilha: "${ss.getName()}" | fuso da planilha: ${ss.getSpreadsheetTimeZone()} | fuso do script: ${Session.getScriptTimeZone()}`);
+  log(`Abrir planilha: ${agora() - t0} ms`);
+
+  let totalCelulas = 0;
+  ss.getSheets().forEach((aba) => {
+    const maxL = aba.getMaxRows();
+    const maxC = aba.getMaxColumns();
+    totalCelulas += maxL * maxC;
+
+    t0 = agora();
+    const faixa   = aba.getDataRange();
+    const valores = faixa.getValues();
+    const msLeitura = agora() - t0;
+
+    let nFormulas = 0;
+    const volateis = {};
+    faixa.getFormulas().forEach((linha) => linha.forEach((f) => {
+      if (!f) return;
+      nFormulas++;
+      (f.match(VOLATEIS) || []).forEach((fn) => {
+        const nome = fn.replace(/\s*\($/, '').toUpperCase();
+        volateis[nome] = (volateis[nome] || 0) + 1;
+      });
+    }));
+
+    const linhasVazias = valores.slice(1).filter((l) => l.every((v) => v === '' || v === null)).length;
+    log(`[${aba.getName()}] grade ${maxL} linhas x ${maxC} colunas (${maxL * maxC} células) | ` +
+        `dados até linha ${aba.getLastRow()}, coluna ${aba.getLastColumn()} | linhas vazias no meio: ${linhasVazias} | ` +
+        `leitura: ${msLeitura} ms | fórmulas: ${nFormulas} ${JSON.stringify(volateis)} | ` +
+        `formatação condicional: ${aba.getConditionalFormatRules().length} regras`);
+  });
+  log(`TOTAL de células da planilha: ${totalCelulas} (o Google limita a 10.000.000; acima de ~1.000.000 já pesa)`);
+
+  const esperado = ['ID', 'FORNECEDOR', 'CATEGORIA', 'SOLICITANTE', 'DESCRICAO', 'VALOR', 'VENCIMENTO', 'COMPETENCIA',
+                    'DATA_PAGAMENTO', 'FORMA_PAGAMENTO', 'NUM_DOCUMENTO', 'OBSERVACAO', 'USUARIO', 'DATA_REGISTRO', 'JUROS_MULTA'];
+  const extras = _getCabecalho('CONTAS').filter((c) => c && !esperado.includes(c));
+  log(`Colunas extras em CONTAS (não usadas pelo sistema): ${extras.length ? extras.join(', ') : 'nenhuma'}`);
+
+  [['carregarDados',   () => _actionCarregarDados()],
+   ['listarContas',    () => _actionListarContas({})],
+   ['listarDashboard', () => _actionListarDashboard()]].forEach(([nome, fn]) => {
+    t0 = agora();
+    const r = fn();
+    log(`Ação ${nome}: ${agora() - t0} ms | resposta de ${JSON.stringify(r).length} bytes`);
+  });
+  log('Confira também: menu Acionadores (ícone de relógio, à esquerda) — liste aqui os acionadores que existirem.');
 }
 
 // ─────────────────────────────────────────────

@@ -1,14 +1,37 @@
 'use strict';
 
 const API = (() => {
-  // Cada chamada ao Apps Script leva 2–3 s (às vezes muito mais), então as
-  // consultas ficam guardadas por um tempo e são reaproveitadas entre as telas.
-  // Qualquer gravação (POST) limpa o cache, para a tela nunca mostrar dado antigo
-  // depois de o próprio usuário salvar algo.
-  const CACHE_TTL_MS = 2 * 60 * 1000;
-  const _cache     = new Map(); // url → { t, data }
-  const _emAndamento = new Map(); // url → Promise (evita buscar a mesma coisa duas vezes)
-  let _geracao = 0;             // incrementa a cada POST; respostas antigas não entram no cache
+  // O servidor (Google Apps Script) leva 1–4 s por chamada e, em alguns períodos,
+  // 30–60 s — às vezes perdendo a resposta (404). Por isso:
+  //  • as listas vêm todas juntas numa ÚNICA chamada ('carregarDados');
+  //  • os dados ficam guardados no navegador: se o servidor demorar, a tela abre com
+  //    o último dado conhecido e atualiza em segundo plano;
+  //  • chamadas lentas NÃO são canceladas — o Google continua executando mesmo assim,
+  //    e cancelar + repetir só aumentava a fila. Só se repete quando há erro;
+  //  • gravações nunca são repetidas (poderiam duplicar registros).
+  const FRESCO_MS          = 60 * 1000;               // até 1 min: usa o guardado sem consultar o servidor
+  const RECENTE_MS         = 10 * 60 * 1000;          // até 10 min: mostra na hora e atualiza em segundo plano
+  const ESPERA_MS          = 6 * 1000;                // mais antigo: espera o servidor por até 6 s
+  const ESPERA_GRAVACAO_MS = 45 * 1000;               // após gravar: espera mais, para mostrar a alteração
+  const GUARDAR_MS         = 7 * 24 * 60 * 60 * 1000; // dados guardados no navegador valem por até 7 dias
+  const LIMITE_MS          = 90 * 1000;               // só para não esperar para sempre
+  const TENTATIVAS         = 3;
+  const CHAVE_LOCAL        = 'biomassa_cache_v1';
+
+  // Listas que o servidor devolve juntas na ação 'carregarDados'
+  const LISTAS = {
+    listarContas:       'contas',
+    listarFornecedores: 'fornecedores',
+    listarCategorias:   'categorias',
+    listarSolicitantes: 'solicitantes'
+  };
+  let _servidorSemCarregarDados = false; // Code.gs antigo: usa as consultas separadas
+
+  const _cache       = new Map(); // url → { t, data, invalido }
+  const _emAndamento = new Map(); // url → Promise (quem pedir junto compartilha a mesma busca)
+  let _geracao = 0;               // muda a cada gravação; respostas anteriores não entram no cache
+  let _avisoDadosNovos = null;    // chamado quando dados mais novos chegam em segundo plano
+  let _ultimoAvisoAntigo = 0;
 
   // Monta URL com query string para requisições GET
   const _buildUrl = (action, params = {}) => {
@@ -24,6 +47,8 @@ const API = (() => {
 
   // Erro de infraestrutura do Google (não é resposta do nosso Code.gs) — vale tentar de novo
   class ErroPassageiro extends Error {}
+  // Passou de LIMITE_MS sem resposta
+  class ErroSemResposta extends Error {}
 
   // Trata a resposta padrão do Apps Script: { status: 'ok'|'erro', data, mensagem }
   const _tratarResposta = async (response) => {
@@ -50,84 +75,184 @@ const API = (() => {
     return json.data !== undefined ? json.data : json;
   };
 
-  // O Google às vezes "prende" uma chamada por 20–40 s; abortar e tentar de novo
-  // costuma responder em 2–3 s. Cada número é o limite de uma tentativa.
-  const LIMITES_MS = [10000, 15000, 25000];
+  const _ehPassageiro = (err) => err instanceof ErroPassageiro || err instanceof TypeError; // TypeError = falha de rede
 
-  const _ehPassageiro = (err) =>
-    err instanceof ErroPassageiro ||
-    err instanceof TypeError ||          // falha de rede
-    err?.name === 'AbortError';          // estourou o tempo limite
+  const _esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  // Executa fetch com tempo limite e novas tentativas em falhas passageiras.
-  // Só pode ser usado para chamadas que podem ser repetidas sem efeito colateral.
+  const _requisitar = async (url, opcoes) => {
+    const controle = new AbortController();
+    const timer = setTimeout(() => controle.abort(), LIMITE_MS);
+    try {
+      const response = await fetch(url, { ...opcoes, redirect: 'follow', signal: controle.signal });
+      return await _tratarResposta(response);
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        throw new ErroSemResposta('O servidor do Google não respondeu. Tente novamente em alguns minutos.');
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  // Repete só em erro passageiro (404, página de erro, resposta perdida, falha de rede).
+  // Uso exclusivo para chamadas que podem ser repetidas sem efeito colateral.
   const _comTentativas = async (url, opcoes) => {
-    for (let i = 0; ; i++) {
-      const controle = new AbortController();
-      const timer = setTimeout(() => controle.abort(), LIMITES_MS[i]);
+    for (let i = 1; ; i++) {
       try {
-        const response = await fetch(url, { ...opcoes, redirect: 'follow', signal: controle.signal });
-        return await _tratarResposta(response);
+        return await _requisitar(url, opcoes);
       } catch (err) {
-        if (!_ehPassageiro(err) || i === LIMITES_MS.length - 1) {
-          if (err?.name === 'AbortError') throw new Error('O servidor do Google não respondeu. Tente novamente.');
-          throw err;
-        }
-        await new Promise((r) => setTimeout(r, 500 * (i + 1)));
-      } finally {
-        clearTimeout(timer);
+        if (!_ehPassageiro(err) || i === TENTATIVAS) throw err;
+        await _esperar(1000 * i);
       }
     }
   };
 
-  // Consulta (GET) com novas tentativas e cache
+  // ===== DADOS GUARDADOS NO NAVEGADOR =====
+
+  const _salvarNoNavegador = () => {
+    try {
+      const obj = {};
+      _cache.forEach((v, url) => { obj[url] = v; });
+      localStorage.setItem(CHAVE_LOCAL, JSON.stringify(obj));
+    } catch { /* sem espaço ou armazenamento bloqueado: segue só com a memória */ }
+  };
+
+  const _lerDoNavegador = () => {
+    try {
+      const obj = JSON.parse(localStorage.getItem(CHAVE_LOCAL) || '{}');
+      Object.entries(obj).forEach(([url, v]) => {
+        if (v && typeof v.t === 'number' && Date.now() - v.t < GUARDAR_MS) {
+          _cache.set(url, { t: v.t, data: v.data, invalido: Boolean(v.invalido) });
+        }
+      });
+    } catch { /* dado corrompido: ignora */ }
+  };
+  _lerDoNavegador();
+
+  // Cópia para a tela poder ordenar/alterar os dados sem mexer no que está guardado
+  const _copia = (data) => (data === undefined ? data : JSON.parse(JSON.stringify(data)));
+
+  const _avisarDadoAntigo = (t, motivo) => {
+    if (Date.now() - _ultimoAvisoAntigo < 5000) return; // uma tela pede várias listas de uma vez
+    _ultimoAvisoAntigo = Date.now();
+    const d = new Date(t);
+    const hoje = new Date().toDateString() === d.toDateString();
+    const quando = d.toLocaleString('pt-BR', hoje
+      ? { hour: '2-digit', minute: '2-digit' }
+      : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    UI.showToast(`${motivo} Exibindo os dados de ${quando}; a atualização continua em segundo plano.`, 'aviso');
+  };
+
+  // ===== CONSULTAS =====
+
+  // Busca no servidor e guarda o resultado
   const _buscar = (url) => {
-    if (_emAndamento.has(url)) return _emAndamento.get(url);
+    const existente = _emAndamento.get(url);
+    if (existente) return existente;
 
     const geracao = _geracao;
-    const promessa = (async () => {
-      const data = await _comTentativas(url, { method: 'GET' });
-      if (geracao === _geracao) _cache.set(url, { t: Date.now(), data });
+    const promessa = _comTentativas(url, { method: 'GET' }).then((data) => {
+      if (geracao === _geracao) {
+        _cache.set(url, { t: Date.now(), data, invalido: false });
+        _salvarNoNavegador();
+      }
       return data;
-    })();
+    });
 
     _emAndamento.set(url, promessa);
-    promessa.finally(() => _emAndamento.delete(url)).catch(() => {});
+    const limpar = () => { if (_emAndamento.get(url) === promessa) _emAndamento.delete(url); };
+    promessa.then(limpar, limpar);
     return promessa;
   };
 
-  // Cópia para a tela poder ordenar/alterar os dados sem mexer no cache
-  const _copia = (data) => JSON.parse(JSON.stringify(data));
+  // Atualiza em segundo plano; se vier diferente do que está na tela, avisa
+  const _atualizarEmSegundoPlano = (url, mostrado) => {
+    _buscar(url).then((novo) => {
+      if (_avisoDadosNovos && JSON.stringify(novo) !== JSON.stringify(mostrado)) _avisoDadosNovos();
+    }).catch(() => { /* tenta de novo na próxima vez que alguma tela pedir */ });
+  };
 
-  const get = async (action, params = {}) => {
-    if (!CONFIG.API_URL) throw new Error('API_URL não configurada.');
-    const url = _buildUrl(action, params);
+  const ESGOTOU = Symbol('esgotou');
 
+  const _obter = async (url) => {
     const salvo = _cache.get(url);
-    if (salvo && Date.now() - salvo.t < CACHE_TTL_MS) return _copia(salvo.data);
+    const idade = salvo ? Date.now() - salvo.t : Infinity;
 
+    if (salvo && !salvo.invalido && idade < FRESCO_MS) return salvo.data;
+
+    if (salvo && !salvo.invalido && idade < RECENTE_MS) {
+      _atualizarEmSegundoPlano(url, salvo.data);
+      return salvo.data;
+    }
+
+    // Sem dado, dado antigo ou alterado por uma gravação: consulta o servidor
     UI.showLoading();
     try {
-      return _copia(await _buscar(url));
+      const busca = _buscar(url);
+      if (!salvo) return await busca;
+
+      // Há um dado anterior: espera um tempo limitado e, se o servidor não responder,
+      // mostra o anterior enquanto a busca continua
+      const espera = salvo.invalido ? ESPERA_GRAVACAO_MS : ESPERA_MS;
+      const r = await Promise.race([busca, _esperar(espera).then(() => ESGOTOU)]);
+      if (r !== ESGOTOU) return r;
+      _avisarDadoAntigo(salvo.t, 'O servidor do Google está lento.');
+      _atualizarEmSegundoPlano(url, salvo.data);
+      return salvo.data;
     } catch (err) {
-      CONFIG.debug && console.log('[API.get]', action, err);
-      throw err;
+      if (!salvo) throw err;
+      // Servidor falhou: melhor mostrar o último dado conhecido do que uma tela vazia
+      _avisarDadoAntigo(salvo.t, 'Não foi possível atualizar agora.');
+      return salvo.data;
     } finally {
       UI.hideLoading();
     }
   };
 
-  // Dispara consultas em segundo plano (sem tela de carregamento) para que
-  // as próximas telas abram na hora. Erros são ignorados aqui — a tela tenta de novo.
-  const preCarregar = (actions = []) => {
-    if (!CONFIG.API_URL) return;
-    actions.forEach((action) => _buscar(_buildUrl(action)).catch(() => {}));
+  const get = async (action, params = {}) => {
+    if (!CONFIG.API_URL) throw new Error('API_URL não configurada.');
+    try {
+      const lista = LISTAS[action];
+      if (lista && !Object.keys(params).length && !_servidorSemCarregarDados) {
+        try {
+          const tudo = await _obter(_buildUrl('carregarDados'));
+          return _copia(tudo[lista] || []);
+        } catch (err) {
+          if (!/Ação GET desconhecida: "carregarDados"/.test(err.message || '')) throw err;
+          _servidorSemCarregarDados = true; // Code.gs ainda não atualizado: usa a consulta separada
+        }
+      }
+      return _copia(await _obter(_buildUrl(action, params)));
+    } catch (err) {
+      CONFIG.debug && console.log('[API.get]', action, err);
+      throw err;
+    }
   };
 
+  // Chamada quando chegam dados mais novos que os exibidos (a tela decide o que fazer)
+  const aoReceberDadosNovos = (fn) => { _avisoDadosNovos = fn; };
+
+  // Mantida só por compatibilidade com versões antigas de auth.js ainda em cache no navegador
+  const preCarregar = () => {};
+
+  // Depois de uma gravação, tudo o que está guardado pode estar desatualizado
+  const _invalidar = () => {
+    _geracao++;
+    _emAndamento.clear();
+    _cache.forEach((v) => { v.invalido = true; });
+    _salvarNoNavegador();
+  };
+
+  // Logout: apaga tudo, inclusive o que ficou guardado no navegador
   const limparCache = () => {
     _geracao++;
+    _emAndamento.clear();
     _cache.clear();
+    try { localStorage.removeItem(CHAVE_LOCAL); } catch { /* armazenamento bloqueado */ }
   };
+
+  // ===== GRAVAÇÕES =====
 
   // Ações de POST que só leem dados e podem ser repetidas com segurança
   const POST_REPETIVEIS = ['login'];
@@ -140,17 +265,16 @@ const API = (() => {
       headers: { 'Content-Type': 'text/plain' }, // Apps Script aceita texto simples
       body: JSON.stringify({ action, ...payload })
     };
+    const repetivel = POST_REPETIVEIS.includes(action);
     try {
-      if (POST_REPETIVEIS.includes(action)) {
-        return await _comTentativas(CONFIG.API_URL, opcoes);
-      }
-      // Gravações NÃO são repetidas nem abortadas: quando a resposta se perde,
-      // o Google normalmente já executou a gravação, e repetir duplicaria o registro
+      if (repetivel) return await _comTentativas(CONFIG.API_URL, opcoes);
+
+      // Gravações NÃO são repetidas: quando a resposta se perde, o Google
+      // normalmente já executou a gravação, e repetir duplicaria o registro
       try {
-        const response = await fetch(CONFIG.API_URL, { ...opcoes, redirect: 'follow' });
-        return await _tratarResposta(response);
+        return await _requisitar(CONFIG.API_URL, opcoes);
       } catch (err) {
-        if (!_ehPassageiro(err)) throw err;
+        if (!_ehPassageiro(err) && !(err instanceof ErroSemResposta)) throw err;
         throw new Error('O servidor do Google não confirmou a operação, mas ela pode ter sido gravada. ' +
                         'Abra a tela de novo e confira antes de repetir.');
       }
@@ -158,11 +282,11 @@ const API = (() => {
       CONFIG.debug && console.log('[API.post]', action, err);
       throw err;
     } finally {
-      // Mesmo em erro o registro pode ter sido gravado — descarta o cache por segurança
-      if (action !== 'login') limparCache();
+      // Mesmo em erro o registro pode ter sido gravado
+      if (!repetivel) _invalidar();
       UI.hideLoading();
     }
   };
 
-  return { get, post, preCarregar, limparCache };
+  return { get, post, preCarregar, limparCache, aoReceberDadosNovos };
 })();

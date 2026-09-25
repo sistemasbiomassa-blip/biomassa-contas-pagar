@@ -14,16 +14,10 @@ const AUTH = (() => {
     sessionStorage.setItem(CHAVE_SESSAO, JSON.stringify(dados));
   };
 
+  // Logout apaga também os dados guardados no navegador
   const limparSessao = () => {
     sessionStorage.clear();
     API.limparCache();
-  };
-
-  // Busca em segundo plano os dados das outras telas enquanto o dashboard carrega
-  const _preCarregarTelas = (sessao) => {
-    const acoes = ['listarContas', 'listarFornecedores', 'listarCategorias', 'listarSolicitantes'];
-    if (sessao.perfil === CONFIG.perfis.ADMIN) acoes.push('listarUsuarios');
-    API.preCarregar(acoes);
   };
 
   // ===== MOCK LOGIN (usado quando CONFIG.API_URL está vazio) =====
@@ -257,7 +251,6 @@ const AUTH = (() => {
         _initBotaoMinhaSenha();
         ROUTER.init();
         ROUTER.navigate('dashboard');
-        _preCarregarTelas(sessao);
       } catch (err) {
         _mostrarErroLogin(err.message || 'Erro ao fazer login. Tente novamente.');
         document.getElementById('input-senha').value = '';
@@ -272,22 +265,24 @@ const AUTH = (() => {
   // ===== INICIALIZAÇÃO =====
 
   const inicializar = () => {
-    _initFormLogin();
+    try {
+      _initFormLogin();
 
-    const sessao = getSessao();
-    if (sessao) {
-      _preencherIdentidade(sessao);
-      _configurarMenuPorPerfil(sessao);
-      _mostrarApp();
-      _initBotaoMinhaSenha();
-      ROUTER.init();
-      ROUTER.navigate('dashboard');
-      _preCarregarTelas(sessao);
-    } else {
-      _mostrarLogin();
+      const sessao = getSessao();
+      if (sessao) {
+        _preencherIdentidade(sessao);
+        _configurarMenuPorPerfil(sessao);
+        _mostrarApp();
+        _initBotaoMinhaSenha();
+        ROUTER.init();
+        ROUTER.navigate('dashboard');
+      } else {
+        _mostrarLogin();
+      }
+    } finally {
+      // Sempre libera a tela: antes, qualquer erro acima deixava a página presa no carregamento
+      _esconderSpinnerInicial();
     }
-
-    _esconderSpinnerInicial();
   };
 
   return {
