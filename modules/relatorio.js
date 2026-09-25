@@ -546,7 +546,7 @@ const RELATORIO = (() => {
     const url  = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href     = url;
-    link.download = `relatorio-contas-${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `relatorio-contas-${UI.dataISO()}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -572,9 +572,9 @@ const RELATORIO = (() => {
         ]);
       } catch (err) {
         UI.showToast('Erro ao carregar dados do relatório.', 'erro');
-        _dados        = _mockContas();
-        _categorias   = _mockCategorias();
-        _fornecedores = _mockFornecedores();
+        _dados        = [];
+        _categorias   = [];
+        _fornecedores = [];
       }
     }
 

@@ -133,6 +133,14 @@ const UI = (() => {
     return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
   };
 
+  // Data no formato YYYY-MM-DD pelo horário local (toISOString usa UTC e,
+  // após as 21h no Brasil, já retornaria o dia seguinte)
+  const dataISO = (d = new Date()) => {
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${mm}-${dd}`;
+  };
+
   // ===== INICIALIZAÇÃO =====
   const init = () => {
     initModalClickOutside();
@@ -149,6 +157,7 @@ const UI = (() => {
     formatMoeda,
     formatData,
     formatDataHora,
+    dataISO,
     init
   };
 })();

@@ -29,10 +29,19 @@ const API = (() => {
     if (!CONFIG.API_URL) throw new Error('API_URL não configurada.');
     UI.showLoading();
     try {
-      const response = await fetch(_buildUrl(action, params), {
-        method: 'GET',
-        redirect: 'follow'
-      });
+      // O Apps Script às vezes devolve 404/5xx passageiros — tenta de novo.
+      // Só GET é repetido: repetir POST poderia gravar o registro em duplicidade.
+      const TENTATIVAS = 3;
+      let response;
+      for (let i = 1; i <= TENTATIVAS; i++) {
+        response = await fetch(_buildUrl(action, params), {
+          method: 'GET',
+          redirect: 'follow'
+        });
+        const passageiro = response.status === 404 || response.status >= 500;
+        if (!passageiro || i === TENTATIVAS) break;
+        await new Promise((r) => setTimeout(r, 500 * i));
+      }
       return await _tratarResposta(response);
     } catch (err) {
       CONFIG.debug && console.log('[API.get]', action, err);

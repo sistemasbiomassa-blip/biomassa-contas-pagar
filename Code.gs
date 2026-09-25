@@ -160,17 +160,12 @@ function _aba(nome) {
 
 // Normaliza valores lidos da planilha:
 //   - Date → string ISO 'YYYY-MM-DD'
-//   - números seriais de data do Sheets → string ISO
 //   - demais valores → sem alteração
+// Números NÃO são convertidos em data: getValues() já devolve Date para células
+// de data, e converter números inteiros transformava valores como 40000 em datas.
 function _formatarValor(v) {
   if (v instanceof Date) {
     return Utilities.formatDate(v, FUSO, 'yyyy-MM-dd');
-  }
-  // Sheets pode retornar um número serial para células de data
-  // Intervalo típico de datas 2000–2099 em serial: ~36526–73050
-  if (typeof v === 'number' && v > 36526 && v < 73050 && v === Math.floor(v)) {
-    const d = new Date(Date.UTC(1899, 11, 30) + v * 86400000);
-    return Utilities.formatDate(d, FUSO, 'yyyy-MM-dd');
   }
   return v;
 }

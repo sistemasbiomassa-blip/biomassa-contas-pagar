@@ -469,8 +469,8 @@ const FORNECEDORES = (() => {
         ]);
       } catch (err) {
         UI.showToast('Erro ao carregar fornecedores.', 'erro');
-        _dados      = _mockFornecedores();
-        _categorias = _mockCategorias();
+        _dados      = [];
+        _categorias = [];
       }
     }
     _filtrar();

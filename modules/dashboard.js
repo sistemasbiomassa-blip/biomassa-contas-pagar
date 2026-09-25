@@ -313,7 +313,12 @@ const DASHBOARD = (() => {
         dados = await API.get('listarDashboard');
       } catch (err) {
         UI.showToast('Erro ao carregar dados do dashboard.', 'erro');
-        dados = _mockData();
+        // Nunca exibe dados de exemplo em produção: mostra o painel zerado
+        dados = {
+          kpi: { vencidos: { count: 0, total: 0 }, hoje: { count: 0, total: 0 }, semana: { count: 0, total: 0 }, pagosMes: { count: 0, total: 0 } },
+          proximasVencer: [],
+          ultimasPagas: []
+        };
       }
     }
 

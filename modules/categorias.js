@@ -347,7 +347,7 @@ const CATEGORIAS = (() => {
         _dados = await API.get('listarCategorias');
       } catch (err) {
         UI.showToast('Erro ao carregar categorias.', 'erro');
-        _dados = _mockCategorias();
+        _dados = [];
       }
     }
     _renderCards(_dados);

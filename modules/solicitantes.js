@@ -361,7 +361,7 @@ const SOLICITANTES = (() => {
         _dados = await API.get('listarSolicitantes');
       } catch (err) {
         UI.showToast('Erro ao carregar solicitantes.', 'erro');
-        _dados = _mockSolicitantes();
+        _dados = [];
       }
     }
     _filtrar();

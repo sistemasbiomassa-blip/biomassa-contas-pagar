@@ -464,7 +464,7 @@ const CONTAS = (() => {
       }
       if (f.vencimentoSemana) {
         const hoje = new Date(); const fim = new Date(hoje); fim.setDate(hoje.getDate() + 7);
-        const toISO = (d) => d.toISOString().split('T')[0];
+        const toISO = UI.dataISO;
         const elI = document.getElementById('filtro-data-inicio');
         const elF = document.getElementById('filtro-data-fim');
         if (elI) elI.value = toISO(hoje); if (elF) elF.value = toISO(fim);
@@ -473,7 +473,7 @@ const CONTAS = (() => {
         const hoje = new Date();
         const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
         const fimMes    = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
-        const toISO = (d) => d.toISOString().split('T')[0];
+        const toISO = UI.dataISO;
         const elI  = document.getElementById('filtro-data-inicio');
         const elF  = document.getElementById('filtro-data-fim');
         const elSt = document.getElementById('filtro-status');
@@ -513,10 +513,11 @@ const CONTAS = (() => {
   // ===== PARCELAMENTO =====
 
   // Calcula próximo vencimento adicionando N meses, mantendo o dia
+  // Se o dia não existir no mês de destino (ex.: 31 em fevereiro), usa o último dia do mês
   const _addMeses = (yyyyMMdd, n) => {
-    const d = new Date(yyyyMMdd + 'T00:00:00');
-    d.setMonth(d.getMonth() + n);
-    return d.toISOString().split('T')[0];
+    const [ano, mes, dia] = yyyyMMdd.split('-').map(Number);
+    const ultimoDia = new Date(ano, mes - 1 + n + 1, 0).getDate();
+    return UI.dataISO(new Date(ano, mes - 1 + n, Math.min(dia, ultimoDia)));
   };
 
   const _gerarParcelas = () => {
@@ -581,7 +582,7 @@ const CONTAS = (() => {
     _editandoId = null;
     _limparModalConta();
     _populaSelectsForm();
-    document.getElementById('ct-vencimento').value = new Date().toISOString().split('T')[0];
+    document.getElementById('ct-vencimento').value = UI.dataISO();
     document.getElementById('bloco-tipo-pag').classList.remove('hidden');
     document.getElementById('modal-conta-titulo').textContent = 'Nova Conta';
     UI.openModal('modal-conta');
@@ -730,7 +731,7 @@ const CONTAS = (() => {
 
   const _abrirModalPagamento = (id) => {
     document.getElementById('pg-id').value         = id;
-    document.getElementById('pg-data').value       = new Date().toISOString().split('T')[0];
+    document.getElementById('pg-data').value       = UI.dataISO();
     document.getElementById('pg-forma').value      = '';
     document.getElementById('pg-juros-multa').value = '';
     document.querySelectorAll('#form-pagamento .erro').forEach((el) => el.classList.remove('erro'));
@@ -837,10 +838,10 @@ const CONTAS = (() => {
         ]);
       } catch (err) {
         UI.showToast('Erro ao carregar contas.', 'erro');
-        _dados        = _mockContas();
-        _fornecedores = _mockFornecedores();
-        _categorias   = _mockCategorias();
-        _solicitantes = _mockSolicitantes();
+        _dados        = [];
+        _fornecedores = [];
+        _categorias   = [];
+        _solicitantes = [];
       }
     }
 

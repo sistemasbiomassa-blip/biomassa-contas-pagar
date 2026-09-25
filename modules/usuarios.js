@@ -474,7 +474,7 @@ const USUARIOS = (() => {
         _dados = await API.get('listarUsuarios');
       } catch (err) {
         UI.showToast('Erro ao carregar usuários.', 'erro');
-        _dados = _mockUsuarios();
+        _dados = [];
       }
     }
     _renderTabela(_dados);
