@@ -1,0 +1,4 @@
+# Cópias de dados geradas por supabase/gerar_importacao.js — contêm dados financeiros
+# e o repositório é público: nunca publicar
+supabase/*dados*.sql
+supabase/importacao*.sql

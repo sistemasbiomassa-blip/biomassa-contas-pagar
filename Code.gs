@@ -18,8 +18,11 @@
 // CONFIGURAÇÃO
 // ─────────────────────────────────────────────
 
-// Deixar vazio para usar a planilha vinculada ao projeto.
-// Preencher com o ID da planilha (URL) caso o script seja standalone.
+// Planilha usada pelo sistema:
+//  • script vinculado à planilha (Extensões → Apps Script): deixar tudo vazio;
+//  • script independente (script.google.com): em Configurações do projeto → Propriedades do
+//    script, criar PLANILHA_ID com o código da planilha (trecho da URL entre /d/ e /edit).
+//    Fica fora do código para não se perder ao colar uma versão nova do Code.gs.
 const PLANILHA_ID = '';
 
 // Fuso horário para formatação de datas
@@ -170,11 +173,19 @@ function _erro(mensagem) {
 // HELPERS DE PLANILHA
 // ─────────────────────────────────────────────
 
-// Retorna a planilha ativa ou pelo ID configurado
+// Retorna a planilha pelo ID configurado ou a vinculada ao projeto.
+// Abre uma única vez por execução (num script independente, cada abertura custa tempo).
+let _planilhaAberta = null;
+
 function _planilha() {
-  return PLANILHA_ID
-    ? SpreadsheetApp.openById(PLANILHA_ID)
-    : SpreadsheetApp.getActiveSpreadsheet();
+  if (!_planilhaAberta) {
+    const id = PLANILHA_ID || PropertiesService.getScriptProperties().getProperty('PLANILHA_ID');
+    _planilhaAberta = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+    if (!_planilhaAberta) {
+      throw new Error('Planilha não encontrada: crie PLANILHA_ID nas Propriedades do script.');
+    }
+  }
+  return _planilhaAberta;
 }
 
 // Retorna a aba pelo nome; lança erro se não existir
