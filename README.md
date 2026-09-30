@@ -15,6 +15,7 @@ Sistema web standalone para gerenciamento de contas a pagar, desenvolvido com HT
 7. [Como adicionar um novo módulo](#7-como-adicionar-um-novo-módulo)
 8. [Roadmap de integração com o Sistema de Frota](#8-roadmap-de-integração-com-o-sistema-de-frota)
 9. [Convenções de código](#9-convenções-de-código)
+10. [Backup do banco (Supabase)](#10-backup-do-banco-supabase)
 
 ---
 
@@ -588,6 +589,40 @@ caso contrário           → Pendente
 ```
 
 Essa lógica existe em dois lugares (propositalmente): em `modules/contas.js` para a exibição no frontend, e em `Code.gs` (`_calcularStatus`) para os filtros server-side.
+
+---
+
+## 10. Backup do banco (Supabase)
+
+O plano gratuito do Supabase não faz backup automático. O workflow `.github/workflows/backup.yml` faz uma cópia completa do banco (`pg_dump`, PostgreSQL 17) **todo dia às 03:30 (Brasília)** e também pode ser disparado à mão em **Actions → Backup diário do banco → Run workflow**.
+
+Como este repositório é **público**, o arquivo é **criptografado** (AES-256) com a senha de backup antes de ser guardado: sem ela, o arquivo é ilegível. Cada backup fica guardado por **90 dias** em **Actions → (execução do dia) → Artifacts**.
+
+### Secrets necessários
+
+Em **Settings → Secrets and variables → Actions → New repository secret**. Os valores de conexão estão no Supabase, em **Connect → Session pooler**:
+
+| Secret | Valor |
+|---|---|
+| `SUPABASE_DB_HOST` | host do *Session pooler* (ex.: `aws-0-sa-east-1.pooler.supabase.com`) |
+| `SUPABASE_DB_PORT` | `5432` |
+| `SUPABASE_DB_USER` | `postgres.<id-do-projeto>` |
+| `SUPABASE_DB_NAME` | `postgres` |
+| `SUPABASE_DB_PASSWORD` | senha do banco (definida ao criar o projeto) |
+| `BACKUP_SENHA` | senha do backup — **guarde-a em local seguro: sem ela não há como abrir os backups** |
+
+### Como restaurar
+
+1. Baixe o artifact do dia desejado (vem um `.zip` com o arquivo `contas-pagar-AAAA-MM-DD.sql.gz.gpg`).
+2. Descriptografe e descompacte (pede a senha do backup):
+   ```
+   gpg --decrypt contas-pagar-AAAA-MM-DD.sql.gz.gpg > backup.sql.gz
+   gunzip backup.sql.gz
+   ```
+3. O `backup.sql` é texto: dá para consultar um dado específico num editor, ou restaurar tudo num projeto Supabase **novo e vazio** com
+   `psql "<connection string do Session pooler>" -f backup.sql`.
+
+O GitHub desativa agendamentos de repositórios públicos após 60 dias sem alterações; o último passo do workflow o reativa a cada execução. Se uma execução falhar, o GitHub avisa por e-mail.
 
 ---
 

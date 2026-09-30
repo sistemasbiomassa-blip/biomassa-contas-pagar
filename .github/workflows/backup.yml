@@ -1,0 +1,77 @@
+name: Backup diário do banco (Supabase)
+
+# Cópia completa do banco, todo dia de madrugada. O repositório é público, então o arquivo
+# é CRIPTOGRAFADO com a senha de backup (secret BACKUP_SENHA): sem ela ninguém consegue abrir.
+# Os backups ficam guardados 90 dias em Actions → este workflow → Artifacts.
+# Como restaurar: README, seção "Backup do banco".
+
+on:
+  schedule:
+    # 06:30 UTC = 03:30 horário de Brasília
+    - cron: '30 6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: write   # para o workflow se manter ativo (ver último passo)
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar cliente PostgreSQL 17
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl ca-certificates gnupg
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Gerar backup criptografado
+        env:
+          PGHOST: ${{ secrets.SUPABASE_DB_HOST }}
+          PGPORT: ${{ secrets.SUPABASE_DB_PORT }}
+          PGUSER: ${{ secrets.SUPABASE_DB_USER }}
+          PGDATABASE: ${{ secrets.SUPABASE_DB_NAME }}
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SENHA_BACKUP: ${{ secrets.BACKUP_SENHA }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SENHA_BACKUP" ]; then
+            echo "::error::Falta o secret BACKUP_SENHA — sem ele o backup não é gerado (o repositório é público)."
+            exit 1
+          fi
+
+          DATA=$(TZ=America/Sao_Paulo date +%Y-%m-%d)
+          pg_dump --no-owner --no-privileges -f backup.sql
+
+          # Conferência mínima: o backup precisa trazer as tabelas e os dados do sistema
+          for tabela in contas fornecedores categorias solicitantes usuarios; do
+            grep -q "CREATE TABLE public.$tabela " backup.sql || { echo "::error::Tabela $tabela ausente no backup"; exit 1; }
+          done
+          echo "Contas no backup: $(awk '/^COPY public.contas /{f=1;next} /^\\\.$/{f=0} f' backup.sql | wc -l)"
+
+          gzip -9 backup.sql
+          ARQUIVO="contas-pagar-$DATA.sql.gz.gpg"
+          echo "$SENHA_BACKUP" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 -o "$ARQUIVO" backup.sql.gz
+          rm -f backup.sql.gz
+          echo "ARQUIVO=$ARQUIVO" >> "$GITHUB_ENV"
+          ls -lh "$ARQUIVO"
+
+      - name: Guardar backup (90 dias)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARQUIVO }}
+          path: ${{ env.ARQUIVO }}
+          retention-days: 90
+          if-no-files-found: error
+
+      # O GitHub desliga agendamentos de repositórios públicos após 60 dias sem alterações;
+      # reativar o próprio workflow a cada execução evita que o backup pare sem ninguém perceber
+      - name: Manter o agendamento ativo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/backup.yml/enable"
