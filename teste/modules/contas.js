@@ -442,6 +442,12 @@ const CONTAS = (() => {
       return true;
     });
 
+    // Vencimento mais próximo primeiro; no mesmo dia, por fornecedor
+    _filtrados.sort((a, b) =>
+      (a.vencimento || '').localeCompare(b.vencimento || '') ||
+      (a.fornecedor || '').localeCompare(b.fornecedor || '', 'pt-BR') ||
+      Number(a.id) - Number(b.id));
+
     _renderTabela(_filtrados);
   };
 

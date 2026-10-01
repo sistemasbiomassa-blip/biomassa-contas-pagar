@@ -290,15 +290,19 @@ const FORNECEDORES = (() => {
       .toLowerCase()
       .trim();
 
+    // Só compara pelos dígitos do CPF/CNPJ quando a busca tem números
+    // (antes, buscar por nome trazia todos os fornecedores)
+    const digitos = termo.replace(/\D/g, '');
     const filtrados = termo
       ? _dados.filter((f) =>
           f.nome.toLowerCase().includes(termo) ||
-          (f.documento || '').replace(/\D/g, '').includes(termo.replace(/\D/g, '')) ||
+          (digitos && (f.documento || '').replace(/\D/g, '').includes(digitos)) ||
           (f.documento || '').toLowerCase().includes(termo)
         )
       : _dados;
 
-    _renderTabela(filtrados);
+    // Ordem alfabética pelo nome
+    _renderTabela([...filtrados].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')));
   };
 
   // ===== MODAL HELPERS =====

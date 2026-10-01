@@ -235,7 +235,8 @@ const SOLICITANTES = (() => {
         )
       : _dados;
 
-    _renderTabela(filtrados);
+    // Ordem alfabética pelo nome
+    _renderTabela([...filtrados].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')));
   };
 
   // ===== MODAL HELPERS =====
