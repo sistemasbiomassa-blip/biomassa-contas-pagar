@@ -8,6 +8,13 @@ const CONTAS = (() => {
   let _categorias    = [];
   let _solicitantes  = [];
   let _editandoId    = null;
+  // Identifica o envio do formulário de conta nova: se o mesmo envio chegar duas vezes
+  // (clique duplo, conexão que caiu), o banco reconhece e não cria outra conta
+  let _chaveEnvio    = null;
+
+  const _novaChaveEnvio = () => (window.crypto?.randomUUID
+    ? window.crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
 
   const _addListener = (el, tipo, fn) => {
     if (!el) return;
@@ -586,6 +593,7 @@ const CONTAS = (() => {
 
   const _abrirModalNovo = () => {
     _editandoId = null;
+    _chaveEnvio = _novaChaveEnvio();
     _limparModalConta();
     _populaSelectsForm();
     document.getElementById('ct-vencimento').value = UI.dataISO();
@@ -701,6 +709,7 @@ const CONTAS = (() => {
 
         await API.post('criarContaParcelada', {
           ...basePayload,
+          chaveEnvio:  _chaveEnvio,
           competencia: document.getElementById('ct-competencia-parc').value,
           parcelas
         });
@@ -719,7 +728,7 @@ const CONTAS = (() => {
           await API.post('atualizarConta', payload);
           UI.showToast('Conta atualizada com sucesso.', 'sucesso');
         } else {
-          await API.post('criarConta', payload);
+          await API.post('criarConta', { ...payload, chaveEnvio: _chaveEnvio });
           UI.showToast('Conta lançada com sucesso.', 'sucesso');
         }
       }

@@ -1,6 +1,16 @@
 # Biomassa Chaparini — Sistema de Contas a Pagar
 
-Sistema web standalone para gerenciamento de contas a pagar, desenvolvido com HTML/CSS/JS puro e Google Apps Script como backend. Projetado para ser hospedado no GitHub Pages sem custo de infraestrutura.
+Sistema web standalone para gerenciamento de contas a pagar, desenvolvido com HTML/CSS/JS puro e **Supabase** (banco Postgres) como backend. Projetado para ser hospedado no GitHub Pages sem custo de infraestrutura.
+
+> **Desde 01/10/2026 o sistema usa o Supabase** em vez do Google Sheets/Apps Script, que vinha
+> demorando de 15 a 75 s e perdendo respostas em vários momentos do dia.
+> - Estrutura do banco, regras de acesso e funções: [`supabase/schema.sql`](supabase/schema.sql)
+> - Configuração: `CONFIG.API_URL` (endereço do projeto) e `CONFIG.SUPABASE_KEY` (chave **pública**) em `config.js`
+> - Login por **e-mail e senha** (Supabase Auth). Novos usuários são criados no painel do Supabase
+>   (Authentication → Add user) e liberados na tela **Usuários** (nome, login curto, perfil, ativo)
+> - Backup diário criptografado: seção [10](#10-backup-do-banco-supabase)
+> - A planilha e o `Code.gs` ficaram como **arquivo de segurança** (não são mais atualizados).
+>   As seções abaixo que falam de Apps Script descrevem a versão anterior.
 
 ---
 
@@ -111,18 +121,18 @@ const CONFIG = {
 - O tratamento de erros é consistente — todos os erros da API chegam ao módulo como exceções JavaScript normais
 - Em modo demo, é trivial interceptar as chamadas e retornar dados mockados
 
-**Desempenho e instabilidade do Google.** Cada chamada ao Apps Script custa de 1 a 4 s e, em alguns períodos, 30–60 s ou uma resposta perdida (404). Por isso o `api.js`:
+**Servidor (Supabase).** O `api.js` traduz as consultas e gravações do sistema para as funções do banco (`supabase/schema.sql`): cada gravação é uma função que confere o perfil de quem está logado, e ninguém grava direto nas tabelas. O `api.js`:
 
-- busca contas, fornecedores, categorias e solicitantes numa **única chamada** (`carregarDados`); `API.get('listarContas')` etc. devolvem a parte correspondente. O dashboard é calculado na tela a partir das contas;
+- busca contas, fornecedores, categorias e solicitantes numa **única chamada** (`carregar_dados`); `API.get('listarContas')` etc. devolvem a parte correspondente. O dashboard é calculado na tela a partir das contas;
+- envia nas contas novas uma **chave de envio**: se o mesmo envio chegar duas vezes (clique duplo, conexão que caiu), o banco não cria outra conta;
 - **guarda os dados no navegador** (`localStorage`, apagado no logout): até 1 min usa direto; até 10 min abre na hora e atualiza em segundo plano; acima disso espera o servidor por até 6 s e, se ele não responder, mostra o último dado com um aviso. Se chegarem dados diferentes em segundo plano, aparece o botão **🔄 Atualizar dados** no cabeçalho;
 - depois de qualquer gravação, a próxima leitura sempre consulta o servidor;
-- **repete só consultas e login, e só em erro** (404, página de erro, resposta perdida). Chamadas lentas não são canceladas — o Google continua executando mesmo assim. **Gravações nunca são repetidas**, porque poderiam duplicar registros.
-
-Cada resposta do `Code.gs` traz o campo `ms` (tempo de execução do script), útil para saber se a demora é do script/planilha ou da infraestrutura do Google. Para investigar a planilha, execute `diagnosticoSistema()` no editor do Apps Script.
+- **repete só o que é seguro repetir**, e só em falha de conexão: consultas, edições, ativar/desativar e contas novas com chave de envio. As demais gravações não são repetidas, porque poderiam duplicar registros;
+- se o login expirar ou o usuário for desativado, volta para a tela de login.
 
 #### `js/auth.js` — Sessão e identidade
 
-Gerencia o ciclo de vida da sessão usando `sessionStorage` (não `localStorage`). A escolha do `sessionStorage` é intencional: a sessão expira quando o usuário fecha a aba, o que é mais seguro para um sistema financeiro.
+Gerencia o ciclo de vida da sessão usando `sessionStorage` (não `localStorage`), inclusive o login do Supabase. A escolha do `sessionStorage` é intencional: a sessão expira quando o usuário fecha a aba, o que é mais seguro para um sistema financeiro. A troca da própria senha (**🔑 Alterar Senha**) confere a senha atual antes de gravar a nova.
 
 Após o login, `auth.js` armazena o objeto de sessão e chama `ROUTER.init()`, que inicializa o sistema e navega automaticamente para o dashboard.
 

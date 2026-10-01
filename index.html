@@ -37,12 +37,12 @@
 
       <form id="form-login" novalidate>
         <div class="form-group">
-          <label class="form-label" for="input-login">Usuário</label>
+          <label class="form-label" for="input-login">E-mail</label>
           <input
             id="input-login"
-            type="text"
+            type="email"
             class="form-input"
-            placeholder="seu.login"
+            placeholder="seu@email.com"
             autocomplete="username"
             required
           />
@@ -248,6 +248,9 @@
   <div id="toast-container"></div>
 
   <!-- ===== SCRIPTS (ordem: config → api → ui → auth → pdf → router → módulos) ===== -->
+  <!-- Biblioteca oficial do Supabase (conexão e login) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
+
   <script src="config.js"></script>
   <script src="js/api.js"></script>
   <script src="js/ui.js"></script>

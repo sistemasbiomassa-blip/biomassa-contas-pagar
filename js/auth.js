@@ -1,9 +1,9 @@
 'use strict';
 
 const AUTH = (() => {
-  const CHAVE_SESSAO = 'biomassa_sessao';
+  const CHAVE_SESSAO = 'biomassa_sessao_v2';
 
-  // Retorna objeto {id, nome, login, perfil} ou null
+  // Retorna objeto {id, nome, login, email, perfil} ou null
   const getSessao = () => {
     const dado = sessionStorage.getItem(CHAVE_SESSAO);
     if (!dado) return null;
@@ -37,21 +37,17 @@ const AUTH = (() => {
 
   // ===== LOGIN / LOGOUT =====
 
-  const login = async (loginStr, senha) => {
-    let sessao;
-    if (!CONFIG.API_URL) {
-      // Modo desenvolvimento — usa mock local
-      sessao = _mockLogin(loginStr, senha);
-    } else {
-      const dados = await API.post('login', { login: loginStr, senha });
-      if (!dados || !dados.perfil) throw new Error('Resposta inválida do servidor.');
-      sessao = dados;
-    }
+  // No Supabase o login é por e-mail; no modo demonstração, pelo login de exemplo
+  const login = async (emailOuLogin, senha) => {
+    const sessao = !CONFIG.API_URL
+      ? _mockLogin(emailOuLogin, senha)
+      : await API.entrar(emailOuLogin, senha);
     setSessao(sessao);
     return sessao;
   };
 
   const logout = () => {
+    API.sair();
     limparSessao();
     _mostrarLogin();
   };
@@ -161,11 +157,11 @@ const AUTH = (() => {
     btnConfirmar.disabled = true;
 
     try {
-      await API.post('alterarMinhaSenha', {
-        login:      sessao.login,
-        senhaAtual: document.getElementById('ms-senha-atual').value,
-        novaSenha:  document.getElementById('ms-nova-senha').value
-      });
+      await API.alterarSenha(
+        sessao.email,
+        document.getElementById('ms-senha-atual').value,
+        document.getElementById('ms-nova-senha').value
+      );
       UI.showToast('Senha alterada com sucesso.', 'sucesso');
       UI.closeModal('modal-minha-senha');
     } catch (err) {
@@ -264,11 +260,23 @@ const AUTH = (() => {
 
   // ===== INICIALIZAÇÃO =====
 
-  const inicializar = () => {
+  const inicializar = async () => {
     try {
       _initFormLogin();
 
-      const sessao = getSessao();
+      // Login expirado ou desativado enquanto o sistema estava aberto: volta para a tela de login
+      API.aoPerderSessao(() => {
+        if (!getSessao()) return;
+        logout();
+        _mostrarErroLogin('Sua sessão expirou. Entre novamente.');
+      });
+
+      let sessao = getSessao();
+      // A aba guarda o perfil, mas o login do servidor pode ter expirado
+      if (sessao && CONFIG.API_URL && !(await API.temSessao())) {
+        limparSessao();
+        sessao = null;
+      }
       if (sessao) {
         _preencherIdentidade(sessao);
         _configurarMenuPorPerfil(sessao);

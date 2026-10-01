@@ -4,7 +4,13 @@ const CONFIG = {
   versao: '1.0.0',
   sistema: 'Biomassa Chaparini — Contas a Pagar',
   empresa: 'Biomassa Chaparini',
-  API_URL: 'https://script.google.com/macros/s/AKfycbyeebCYs5_rm6kG-zL3QajLskAd3e3RI9RCKIXjNCgOp3rkY8bZjKccgWonFPlkdPMxvg/exec',
+  // Servidor: Supabase (banco Postgres). Vazio = modo demonstração (dados de exemplo).
+  API_URL: 'https://xamuktvrcmbttwckgwva.supabase.co',
+  // Chave PÚBLICA (publishable): pode ficar no site — quem protege os dados são as regras do banco.
+  // Nunca coloque aqui a chave secreta (secret / service_role).
+  SUPABASE_KEY: 'sb_publishable_-uBwhBeO4pYSxu2yuhczDQ_86Bi_oNd',
+  // Painel onde o administrador cria os logins (e-mail e senha) dos usuários
+  SUPABASE_PAINEL_USUARIOS: 'https://supabase.com/dashboard/project/xamuktvrcmbttwckgwva/auth/users',
   FROTA_API_URL: '',   // reservado para integração futura com sistema de frota
   // Bibliotecas de PDF: baixadas só na primeira vez que alguém gera um PDF (ordem importa)
   PDF_LIBS: [

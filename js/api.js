@@ -1,106 +1,111 @@
 'use strict';
 
 const API = (() => {
-  // O servidor (Google Apps Script) leva 1–4 s por chamada e, em alguns períodos,
-  // 30–60 s — às vezes perdendo a resposta (404). Por isso:
-  //  • as listas vêm todas juntas numa ÚNICA chamada ('carregarDados');
-  //  • os dados ficam guardados no navegador: se o servidor demorar, a tela abre com
-  //    o último dado conhecido e atualiza em segundo plano;
-  //  • chamadas lentas NÃO são canceladas — o Google continua executando mesmo assim,
-  //    e cancelar + repetir só aumentava a fila. Só se repete quando há erro;
-  //  • gravações nunca são repetidas (poderiam duplicar registros).
+  // Servidor: Supabase (banco Postgres). As regras de acesso ficam no próprio banco
+  // (supabase/schema.sql): cada gravação é uma função que confere o perfil de quem está logado.
+  //  • as listas vêm todas juntas numa ÚNICA chamada (carregar_dados);
+  //  • os dados ficam guardados no navegador: se a conexão falhar, a tela abre com o último
+  //    dado conhecido e atualiza em segundo plano;
+  //  • lançamentos levam uma chave de envio: se o mesmo envio chegar duas vezes, o banco não duplica.
   const FRESCO_MS          = 60 * 1000;               // até 1 min: usa o guardado sem consultar o servidor
   const RECENTE_MS         = 10 * 60 * 1000;          // até 10 min: mostra na hora e atualiza em segundo plano
   const ESPERA_MS          = 6 * 1000;                // mais antigo: espera o servidor por até 6 s
   const ESPERA_GRAVACAO_MS = 45 * 1000;               // após gravar: espera mais, para mostrar a alteração
   const GUARDAR_MS         = 7 * 24 * 60 * 60 * 1000; // dados guardados no navegador valem por até 7 dias
-  const LIMITE_MS          = 90 * 1000;               // só para não esperar para sempre
+  const LIMITE_MS          = 30 * 1000;               // sem resposta nesse tempo, desiste
   const TENTATIVAS         = 3;
-  const CHAVE_LOCAL        = 'biomassa_cache_v1';
+  const CHAVE_LOCAL        = 'biomassa_cache_v2';
 
-  // Listas que o servidor devolve juntas na ação 'carregarDados'
+  // Consultas do sistema → funções do banco
+  const FUNCOES_LEITURA = {
+    carregarDados:  'carregar_dados',
+    listarUsuarios: 'listar_usuarios'
+  };
+
+  // Listas que o banco devolve juntas em carregar_dados
   const LISTAS = {
     listarContas:       'contas',
     listarFornecedores: 'fornecedores',
     listarCategorias:   'categorias',
     listarSolicitantes: 'solicitantes'
   };
-  let _servidorSemCarregarDados = false; // Code.gs antigo: usa as consultas separadas
 
-  const _cache       = new Map(); // url → { t, data, invalido }
-  const _emAndamento = new Map(); // url → Promise (quem pedir junto compartilha a mesma busca)
+  // Gravações do sistema → funções do banco
+  const FUNCOES_GRAVACAO = {
+    criarConta:           'criar_conta',
+    criarContaParcelada:  'criar_conta_parcelada',
+    atualizarConta:       'atualizar_conta',
+    excluirConta:         'excluir_conta',
+    registrarPagamento:   'registrar_pagamento',
+    criarFornecedor:      'criar_fornecedor',
+    atualizarFornecedor:  'atualizar_fornecedor',
+    toggleFornecedor:     'toggle_fornecedor',
+    criarCategoria:       'criar_categoria',
+    atualizarCategoria:   'atualizar_categoria',
+    toggleCategoria:      'toggle_categoria',
+    criarSolicitante:     'criar_solicitante',
+    atualizarSolicitante: 'atualizar_solicitante',
+    toggleSolicitante:    'toggle_solicitante',
+    atualizarUsuario:     'atualizar_usuario',
+    toggleUsuario:        'toggle_usuario'
+  };
+
+  // Gravações que podem ser repetidas sem risco: definem valores (não somam nem criam),
+  // ou trazem chave de envio (o banco reconhece a repetição)
+  const _podeRepetir = (action, payload) =>
+    /^(atualizar|toggle)/.test(action) || (/^criarConta/.test(action) && !!payload.chaveEnvio);
+
+  // Sessão guardada só enquanto a aba estiver aberta (como antes: fechou a aba, saiu)
+  const _cliente = (CONFIG.API_URL && window.supabase)
+    ? window.supabase.createClient(CONFIG.API_URL, CONFIG.SUPABASE_KEY, {
+        auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+      })
+    : null;
+
+  const _cache       = new Map(); // chave → { t, data, invalido }
+  const _emAndamento = new Map(); // chave → Promise (quem pedir junto compartilha a mesma busca)
   let _geracao = 0;               // muda a cada gravação; respostas anteriores não entram no cache
   let _avisoDadosNovos = null;    // chamado quando dados mais novos chegam em segundo plano
+  let _aoPerderSessao  = null;    // chamado quando o login expira
   let _ultimoAvisoAntigo = 0;
 
-  // Monta URL com query string para requisições GET
-  const _buildUrl = (action, params = {}) => {
-    const url = new URL(CONFIG.API_URL);
-    url.searchParams.set('action', action);
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && v !== '') {
-        url.searchParams.set(k, v);
-      }
-    });
-    return url.toString();
-  };
-
-  // Erro de infraestrutura do Google (não é resposta do nosso Code.gs) — vale tentar de novo
+  // Falha de conexão ou do servidor (não é uma recusa do banco) — vale tentar de novo
   class ErroPassageiro extends Error {}
-  // Passou de LIMITE_MS sem resposta
   class ErroSemResposta extends Error {}
-
-  // Trata a resposta padrão do Apps Script: { status: 'ok'|'erro', data, mensagem }
-  const _tratarResposta = async (response) => {
-    if (!response.ok) {
-      const msg = `Erro HTTP ${response.status}: ${response.statusText}`;
-      if (response.status === 404 || response.status >= 500) throw new ErroPassageiro(msg);
-      throw new Error(msg);
-    }
-    let json;
-    try {
-      json = JSON.parse(await response.text());
-    } catch {
-      // O Google às vezes devolve uma página HTML de erro com status 200
-      throw new ErroPassageiro('Resposta inválida do servidor.');
-    }
-    if (json.status === 'erro') {
-      // O Google às vezes perde a resposta e redireciona o navegador de volta ao
-      // /exec sem parâmetros — o doGet responde "ação desconhecida" com ação vazia
-      if (/^Ação GET desconhecida: ""/.test(json.mensagem || '')) {
-        throw new ErroPassageiro('Resposta perdida pelo servidor do Google.');
-      }
-      throw new Error(json.mensagem || 'Ocorreu um erro no servidor.');
-    }
-    return json.data !== undefined ? json.data : json;
-  };
-
-  const _ehPassageiro = (err) => err instanceof ErroPassageiro || err instanceof TypeError; // TypeError = falha de rede
 
   const _esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const _requisitar = async (url, opcoes) => {
+  const _traduzirErro = (error, status) => {
+    const msg = error.message || '';
+    if (status === 401 || /JWT|permission denied|login novamente/i.test(msg)) {
+      if (_aoPerderSessao) setTimeout(_aoPerderSessao, 0);
+      return new Error('Sua sessão expirou. Entre novamente.');
+    }
+    if (/abort/i.test(msg)) return new ErroSemResposta('O servidor não respondeu. Verifique a internet e tente novamente.');
+    // Sem código do banco = a requisição nem chegou (rede) ou o servidor falhou
+    if (!error.code || status >= 500) return new ErroPassageiro('Falha de conexão com o servidor.');
+    return new Error(msg); // recusa do banco (validação ou permissão): mensagem já vem em português
+  };
+
+  // Chama uma função do banco, com tempo limite
+  const _chamar = async (funcao, params) => {
     const controle = new AbortController();
     const timer = setTimeout(() => controle.abort(), LIMITE_MS);
     try {
-      const response = await fetch(url, { ...opcoes, redirect: 'follow', signal: controle.signal });
-      return await _tratarResposta(response);
-    } catch (err) {
-      if (err?.name === 'AbortError') {
-        throw new ErroSemResposta('O servidor do Google não respondeu. Tente novamente em alguns minutos.');
-      }
-      throw err;
+      const { data, error, status } = await _cliente.rpc(funcao, params).abortSignal(controle.signal);
+      if (error) throw _traduzirErro(error, status);
+      return data;
     } finally {
       clearTimeout(timer);
     }
   };
 
-  // Repete só em erro passageiro (404, página de erro, resposta perdida, falha de rede).
-  // Uso exclusivo para chamadas que podem ser repetidas sem efeito colateral.
-  const _comTentativas = async (url, opcoes) => {
+  const _ehPassageiro = (err) => err instanceof ErroPassageiro;
+
+  const _comTentativas = async (fn) => {
     for (let i = 1; ; i++) {
       try {
-        return await _requisitar(url, opcoes);
+        return await fn();
       } catch (err) {
         if (!_ehPassageiro(err) || i === TENTATIVAS) throw err;
         await _esperar(1000 * i);
@@ -113,7 +118,7 @@ const API = (() => {
   const _salvarNoNavegador = () => {
     try {
       const obj = {};
-      _cache.forEach((v, url) => { obj[url] = v; });
+      _cache.forEach((v, chave) => { obj[chave] = v; });
       localStorage.setItem(CHAVE_LOCAL, JSON.stringify(obj));
     } catch { /* sem espaço ou armazenamento bloqueado: segue só com a memória */ }
   };
@@ -121,14 +126,20 @@ const API = (() => {
   const _lerDoNavegador = () => {
     try {
       const obj = JSON.parse(localStorage.getItem(CHAVE_LOCAL) || '{}');
-      Object.entries(obj).forEach(([url, v]) => {
+      Object.entries(obj).forEach(([chave, v]) => {
         if (v && typeof v.t === 'number' && Date.now() - v.t < GUARDAR_MS) {
-          _cache.set(url, { t: v.t, data: v.data, invalido: Boolean(v.invalido) });
+          _cache.set(chave, { t: v.t, data: v.data, invalido: Boolean(v.invalido) });
         }
       });
     } catch { /* dado corrompido: ignora */ }
   };
   _lerDoNavegador();
+
+  // Dados guardados pela versão antiga (Apps Script): não servem mais e não devem ficar no computador
+  try {
+    localStorage.removeItem('biomassa_cache_v1');
+    sessionStorage.removeItem('biomassa_sessao');
+  } catch { /* armazenamento bloqueado */ }
 
   // Cópia para a tela poder ordenar/alterar os dados sem mexer no que está guardado
   const _copia = (data) => (data === undefined ? data : JSON.parse(JSON.stringify(data)));
@@ -146,50 +157,49 @@ const API = (() => {
 
   // ===== CONSULTAS =====
 
-  // Busca no servidor e guarda o resultado
-  const _buscar = (url) => {
-    const existente = _emAndamento.get(url);
+  const _buscar = (chave) => {
+    const existente = _emAndamento.get(chave);
     if (existente) return existente;
 
     const geracao = _geracao;
-    const promessa = _comTentativas(url, { method: 'GET' }).then((data) => {
+    const promessa = _comTentativas(() => _chamar(FUNCOES_LEITURA[chave])).then((data) => {
       if (geracao === _geracao) {
-        _cache.set(url, { t: Date.now(), data, invalido: false });
+        _cache.set(chave, { t: Date.now(), data, invalido: false });
         _salvarNoNavegador();
       }
       return data;
     });
 
-    _emAndamento.set(url, promessa);
-    const limpar = () => { if (_emAndamento.get(url) === promessa) _emAndamento.delete(url); };
+    _emAndamento.set(chave, promessa);
+    const limpar = () => { if (_emAndamento.get(chave) === promessa) _emAndamento.delete(chave); };
     promessa.then(limpar, limpar);
     return promessa;
   };
 
   // Atualiza em segundo plano; se vier diferente do que está na tela, avisa
-  const _atualizarEmSegundoPlano = (url, mostrado) => {
-    _buscar(url).then((novo) => {
+  const _atualizarEmSegundoPlano = (chave, mostrado) => {
+    _buscar(chave).then((novo) => {
       if (_avisoDadosNovos && JSON.stringify(novo) !== JSON.stringify(mostrado)) _avisoDadosNovos();
     }).catch(() => { /* tenta de novo na próxima vez que alguma tela pedir */ });
   };
 
   const ESGOTOU = Symbol('esgotou');
 
-  const _obter = async (url) => {
-    const salvo = _cache.get(url);
+  const _obter = async (chave) => {
+    const salvo = _cache.get(chave);
     const idade = salvo ? Date.now() - salvo.t : Infinity;
 
     if (salvo && !salvo.invalido && idade < FRESCO_MS) return salvo.data;
 
     if (salvo && !salvo.invalido && idade < RECENTE_MS) {
-      _atualizarEmSegundoPlano(url, salvo.data);
+      _atualizarEmSegundoPlano(chave, salvo.data);
       return salvo.data;
     }
 
     // Sem dado, dado antigo ou alterado por uma gravação: consulta o servidor
     UI.showLoading();
     try {
-      const busca = _buscar(url);
+      const busca = _buscar(chave);
       if (!salvo) return await busca;
 
       // Há um dado anterior: espera um tempo limitado e, se o servidor não responder,
@@ -197,12 +207,12 @@ const API = (() => {
       const espera = salvo.invalido ? ESPERA_GRAVACAO_MS : ESPERA_MS;
       const r = await Promise.race([busca, _esperar(espera).then(() => ESGOTOU)]);
       if (r !== ESGOTOU) return r;
-      _avisarDadoAntigo(salvo.t, 'O servidor do Google está lento.');
-      _atualizarEmSegundoPlano(url, salvo.data);
+      _avisarDadoAntigo(salvo.t, 'O servidor está demorando.');
+      _atualizarEmSegundoPlano(chave, salvo.data);
       return salvo.data;
     } catch (err) {
-      if (!salvo) throw err;
-      // Servidor falhou: melhor mostrar o último dado conhecido do que uma tela vazia
+      if (!salvo || !_ehPassageiro(err)) throw err;
+      // Conexão falhou: melhor mostrar o último dado conhecido do que uma tela vazia
       _avisarDadoAntigo(salvo.t, 'Não foi possível atualizar agora.');
       return salvo.data;
     } finally {
@@ -210,20 +220,16 @@ const API = (() => {
     }
   };
 
-  const get = async (action, params = {}) => {
-    if (!CONFIG.API_URL) throw new Error('API_URL não configurada.');
+  const get = async (action) => {
+    if (!_cliente) throw new Error('Servidor não configurado.');
     try {
       const lista = LISTAS[action];
-      if (lista && !Object.keys(params).length && !_servidorSemCarregarDados) {
-        try {
-          const tudo = await _obter(_buildUrl('carregarDados'));
-          return _copia(tudo[lista] || []);
-        } catch (err) {
-          if (!/Ação GET desconhecida: "carregarDados"/.test(err.message || '')) throw err;
-          _servidorSemCarregarDados = true; // Code.gs ainda não atualizado: usa a consulta separada
-        }
+      if (lista) {
+        const tudo = await _obter('carregarDados');
+        return _copia(tudo[lista] || []);
       }
-      return _copia(await _obter(_buildUrl(action, params)));
+      if (!FUNCOES_LEITURA[action]) throw new Error(`Consulta desconhecida: ${action}`);
+      return _copia(await _obter(action));
     } catch (err) {
       CONFIG.debug && console.log('[API.get]', action, err);
       throw err;
@@ -232,6 +238,9 @@ const API = (() => {
 
   // Chamada quando chegam dados mais novos que os exibidos (a tela decide o que fazer)
   const aoReceberDadosNovos = (fn) => { _avisoDadosNovos = fn; };
+
+  // Chamada quando o login expira ou é desativado (o auth.js volta para a tela de login)
+  const aoPerderSessao = (fn) => { _aoPerderSessao = fn; };
 
   // Mantida só por compatibilidade com versões antigas de auth.js ainda em cache no navegador
   const preCarregar = () => {};
@@ -254,39 +263,86 @@ const API = (() => {
 
   // ===== GRAVAÇÕES =====
 
-  // Ações de POST que só leem dados e podem ser repetidas com segurança
-  const POST_REPETIVEIS = ['login'];
-
   const post = async (action, payload = {}) => {
-    if (!CONFIG.API_URL) throw new Error('API_URL não configurada.');
-    UI.showLoading();
-    const opcoes = {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' }, // Apps Script aceita texto simples
-      body: JSON.stringify({ action, ...payload })
-    };
-    const repetivel = POST_REPETIVEIS.includes(action);
-    try {
-      if (repetivel) return await _comTentativas(CONFIG.API_URL, opcoes);
+    if (!_cliente) throw new Error('Servidor não configurado.');
+    const funcao = FUNCOES_GRAVACAO[action];
+    if (!funcao) throw new Error(`Operação desconhecida: ${action}`);
 
-      // Gravações NÃO são repetidas: quando a resposta se perde, o Google
-      // normalmente já executou a gravação, e repetir duplicaria o registro
+    UI.showLoading();
+    try {
+      const chamar = () => _chamar(funcao, { p: payload });
+      if (_podeRepetir(action, payload)) return await _comTentativas(chamar);
       try {
-        return await _requisitar(CONFIG.API_URL, opcoes);
+        return await chamar();
       } catch (err) {
         if (!_ehPassageiro(err) && !(err instanceof ErroSemResposta)) throw err;
-        throw new Error('O servidor do Google não confirmou a operação, mas ela pode ter sido gravada. ' +
+        throw new Error('Não foi possível confirmar a operação: ela pode ter sido gravada. ' +
                         'Abra a tela de novo e confira antes de repetir.');
       }
     } catch (err) {
       CONFIG.debug && console.log('[API.post]', action, err);
       throw err;
     } finally {
-      // Mesmo em erro o registro pode ter sido gravado
-      if (!repetivel) _invalidar();
+      _invalidar(); // mesmo em erro o registro pode ter sido gravado
       UI.hideLoading();
     }
   };
 
-  return { get, post, preCarregar, limparCache, aoReceberDadosNovos };
+  // ===== LOGIN =====
+
+  const entrar = async (email, senha) => {
+    UI.showLoading();
+    try {
+      const { error } = await _cliente.auth.signInWithPassword({ email, password: senha });
+      if (error) {
+        if (/invalid login credentials/i.test(error.message)) throw new Error('E-mail ou senha incorretos.');
+        if (/email not confirmed/i.test(error.message)) throw new Error('E-mail ainda não confirmado. Fale com o administrador.');
+        if (!error.status || error.status >= 500) throw new Error('Não foi possível conectar ao servidor. Verifique a internet.');
+        throw new Error(error.message);
+      }
+      const eu = await _chamar('meu_usuario');
+      if (!eu || !eu.ativo || !eu.perfil) {
+        await _cliente.auth.signOut();
+        throw new Error('Seu acesso ainda não foi liberado. Fale com o administrador do sistema.');
+      }
+      return { id: eu.id, nome: eu.nome, login: eu.login, email: eu.email, perfil: eu.perfil };
+    } finally {
+      UI.hideLoading();
+    }
+  };
+
+  const sair = async () => {
+    limparCache();
+    try { await _cliente?.auth.signOut(); } catch { /* já estava sem sessão */ }
+  };
+
+  // Existe login válido guardado nesta aba?
+  const temSessao = async () => {
+    if (!_cliente) return false;
+    const { data } = await _cliente.auth.getSession();
+    return !!data.session;
+  };
+
+  const alterarSenha = async (email, senhaAtual, novaSenha) => {
+    UI.showLoading();
+    try {
+      const { error: errAtual } = await _cliente.auth.signInWithPassword({ email, password: senhaAtual });
+      if (errAtual) {
+        throw new Error(/invalid login credentials/i.test(errAtual.message) ? 'Senha atual incorreta.' : errAtual.message);
+      }
+      const { error } = await _cliente.auth.updateUser({ password: novaSenha });
+      if (error) {
+        if (/different|same/i.test(error.message)) throw new Error('A nova senha precisa ser diferente da atual.');
+        if (/least|weak|characters/i.test(error.message)) throw new Error('Senha fraca: use no mínimo 6 caracteres.');
+        throw new Error(error.message);
+      }
+    } finally {
+      UI.hideLoading();
+    }
+  };
+
+  return {
+    get, post, preCarregar, limparCache, aoReceberDadosNovos, aoPerderSessao,
+    entrar, sair, temSessao, alterarSenha
+  };
 })();
