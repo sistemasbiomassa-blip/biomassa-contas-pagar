@@ -1,6 +1,9 @@
 // Gera o SQL que copia os dados da planilha (via Apps Script) para o Supabase.
 //
-// Uso:  node supabase/gerar_importacao.js <arquivo-de-saida.sql>
+// Uso:  node supabase/gerar_importacao.js <arquivo-de-saida.sql> [arquivo-de-conferencia.txt]
+//
+// O arquivo de conferência (opcional) recebe uma "impressão digital" (md5) das contas copiadas,
+// para comparar com o banco depois da importação sem precisar exibir nenhum dado.
 //
 // O arquivo gerado contém dados financeiros: NÃO coloque no repositório (ele é público).
 // O SQL apaga e recarrega contas, fornecedores, categorias e solicitantes, mantendo os IDs
@@ -8,6 +11,7 @@
 'use strict';
 
 const fs = require('fs');
+const crypto = require('crypto');
 
 const API_URL = 'https://script.google.com/macros/s/AKfycbyeebCYs5_rm6kG-zL3QajLskAd3e3RI9RCKIXjNCgOp3rkY8bZjKccgWonFPlkdPMxvg/exec';
 
@@ -82,6 +86,14 @@ const inserir = (tabela, colunas, linhas) => {
   ].join('\n');
 
   fs.writeFileSync(saida, sql);
+
+  // Mesma expressão usada na conferência dentro do banco (ver .github/workflows/migracao.yml)
+  const conferencia = process.argv[3];
+  if (conferencia) {
+    const texto = [...d.contas].sort((a, b) => Number(a.id) - Number(b.id))
+      .map((c) => `${c.id}|${numero(c.valor)}|${c.vencimento}|${c.dataPagamento || ''}`).join(',');
+    fs.writeFileSync(conferencia, crypto.createHash('md5').update(texto, 'utf8').digest('hex') + '\n');
+  }
   console.log(`Gerado ${saida}: ${d.contas.length} contas, ${d.fornecedores.length} fornecedores, ` +
               `${d.categorias.length} categorias, ${d.solicitantes.length} solicitantes (${(sql.length / 1024).toFixed(0)} KB)`);
 })().catch((e) => { console.error('ERRO:', e.message); process.exit(1); });
