@@ -1,0 +1,93 @@
+name: Aplicar estrutura do banco (schema.sql)
+
+# Roda o supabase/schema.sql no banco do Supabase — o mesmo arquivo que se colaria no
+# SQL Editor. Ele foi feito para rodar de novo sem perder dados: só cria o que falta e
+# substitui as funções. Use sempre que o schema.sql mudar.
+#
+# Só roda quando alguém manda rodar: Actions → este workflow → Run workflow.
+# Usa os mesmos secrets do backup diário (SUPABASE_DB_*).
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  aplicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar cliente PostgreSQL 17
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl ca-certificates gnupg
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Rodar o schema.sql
+        env:
+          PGHOST: ${{ secrets.SUPABASE_DB_HOST }}
+          PGPORT: ${{ secrets.SUPABASE_DB_PORT }}
+          PGUSER: ${{ secrets.SUPABASE_DB_USER }}
+          PGDATABASE: ${{ secrets.SUPABASE_DB_NAME }}
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          # Quantos registros existem antes — nenhum pode sumir
+          declare -A ANTES
+          for tabela in contas fornecedores categorias solicitantes usuarios; do
+            ANTES[$tabela]=$(psql -tAc "select count(*) from public.$tabela")
+            echo "$tabela antes: ${ANTES[$tabela]}"
+          done
+
+          psql -v ON_ERROR_STOP=1 -f supabase/schema.sql
+
+          # Conferência: o schema só cria e substitui, nunca apaga registro
+          for tabela in contas fornecedores categorias solicitantes usuarios; do
+            depois=$(psql -tAc "select count(*) from public.$tabela")
+            echo "$tabela depois: $depois"
+            if [ "${ANTES[$tabela]}" != "$depois" ]; then
+              echo "::error::O número de registros em $tabela mudou (${ANTES[$tabela]} → $depois)"
+              exit 1
+            fi
+          done
+
+      - name: Conferir as funções que o sistema chama
+        env:
+          PGHOST: ${{ secrets.SUPABASE_DB_HOST }}
+          PGPORT: ${{ secrets.SUPABASE_DB_PORT }}
+          PGUSER: ${{ secrets.SUPABASE_DB_USER }}
+          PGDATABASE: ${{ secrets.SUPABASE_DB_NAME }}
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          # Toda função que as telas chamam precisa existir e estar liberada para quem está logado
+          for funcao in carregar_dados listar_usuarios criar_conta criar_conta_parcelada \
+                        atualizar_conta excluir_conta registrar_pagamento \
+                        criar_fornecedor atualizar_fornecedor toggle_fornecedor \
+                        criar_categoria atualizar_categoria toggle_categoria \
+                        criar_solicitante atualizar_solicitante toggle_solicitante \
+                        atualizar_usuario toggle_usuario; do
+            existe=$(psql -tAc "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                                where n.nspname = 'public' and p.proname = '$funcao'")
+            if [ "$existe" = "0" ]; then
+              echo "::error::Função $funcao não existe no banco"
+              exit 1
+            fi
+          done
+          echo "Todas as funções do sistema estão no banco."
+
+          # Editar uma conta paga precisa poder corrigir o juros/multa
+          if psql -tAc "select pg_get_functiondef('public.atualizar_conta(jsonb)'::regprocedure)" | grep -q "juros_multa"; then
+            echo "atualizar_conta grava juros/multa: ok"
+          else
+            echo "::error::atualizar_conta não grava juros_multa — o banco está com uma versão antiga"
+            exit 1
+          fi
