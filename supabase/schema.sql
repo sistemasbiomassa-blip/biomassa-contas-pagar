@@ -300,7 +300,9 @@ begin
     raise exception 'Você só pode editar contas lançadas por você.' using errcode = '42501';
   end if;
 
-  -- Pagamento já registrado é preservado: editar a conta não mexe nele
+  -- Data e forma de pagamento são preservadas: editar a conta não mexe nelas.
+  -- Juros/multa é a exceção — só muda quando a tela manda o campo (conta já paga),
+  -- que é como se corrige um valor lançado errado no pagamento.
   update public.contas set
     fornecedor    = public._texto(p, 'fornecedor'),
     categoria     = public._texto(p, 'categoria'),
@@ -310,7 +312,10 @@ begin
     vencimento    = public._data(p ->> 'vencimento', 'vencimento'),
     competencia   = public._competencia(p ->> 'competencia'),
     num_documento = public._texto(p, 'numDocumento'),
-    observacao    = public._texto(p, 'observacao')
+    observacao    = public._texto(p, 'observacao'),
+    juros_multa   = case when p ? 'jurosMulta' and data_pagamento is not null
+                         then public._numero(p ->> 'jurosMulta', 'juros/multa')
+                         else juros_multa end
   where id = (p ->> 'id')::bigint;
 
   return json_build_object('atualizado', true);

@@ -6,6 +6,8 @@ const RELATORIO = (() => {
   let _filtrados    = [];  // subconjunto após filtros
   let _categorias   = [];  // para lookup da flag frota
   let _fornecedores = [];  // para popular select de filtro
+  // Na primeira carga da tela, reaplica o filtro usado antes de sair
+  let _restaurarPendente = false;
 
   const _addListener = (el, tipo, fn) => {
     if (!el) return;
@@ -53,6 +55,12 @@ const RELATORIO = (() => {
   const _isCategoriaFrota = (nomeCategoria) =>
     !!_categorias.find((c) => c.nome === nomeCategoria)?.frota;
 
+  // Juros/multa só existem em conta paga e fazem parte do que saiu do caixa
+  const _juros = (c) => (c.dataPagamento ? (parseFloat(c.jurosMulta) || 0) : 0);
+
+  // Valor que a conta representa hoje: principal + juros/multa quando já paga
+  const _totalConta = (c) => (parseFloat(c.valor) || 0) + _juros(c);
+
   // ===== MOCK DATA =====
 
   const _mockContas = () => {
@@ -71,7 +79,7 @@ const RELATORIO = (() => {
       { id: 'CT007', fornecedor: 'Posto São João',          categoria: 'Combustível',   descricao: 'Abastecimento frota sem. 22',valor: 780.00, vencimento: fmt(add(hoje, -12)), competencia: mes(add(hoje, -12)), dataPagamento: fmt(add(hoje, -12)), formaPagamento: 'PIX',           usuario: 'financeiro', dataRegistro: fmt(add(hoje, -18)) },
       { id: 'CT008', fornecedor: 'Mecânica Central',        categoria: 'Manutenção',    descricao: 'Manutenção preventiva frota',valor: 1800.00, vencimento: fmt(add(hoje, -10)), competencia: mes(add(hoje, -10)), dataPagamento: fmt(add(hoje, -10)), formaPagamento: 'Transferência', usuario: 'admin',      dataRegistro: fmt(add(hoje, -20)) },
       { id: 'CT009', fornecedor: 'Escritório Contábil XYZ', categoria: 'Administrativo',descricao: 'Honorários 2 meses atrás',  valor: 1500.00, vencimento: fmt(add(hoje, -35)), competencia: mes(add(hoje, -35)), dataPagamento: fmt(add(hoje, -35)), formaPagamento: 'Transferência', usuario: 'financeiro', dataRegistro: fmt(add(hoje, -42)) },
-      { id: 'CT010', fornecedor: 'Posto São João',          categoria: 'Combustível',   descricao: 'Abastecimento frota sem. 20',valor: 650.00, vencimento: fmt(add(hoje, -25)), competencia: mes(add(hoje, -25)), dataPagamento: fmt(add(hoje, -24)), formaPagamento: 'PIX',           usuario: 'financeiro', dataRegistro: fmt(add(hoje, -30)) }
+      { id: 'CT010', fornecedor: 'Posto São João',          categoria: 'Combustível',   descricao: 'Abastecimento frota sem. 20',valor: 650.00, vencimento: fmt(add(hoje, -25)), competencia: mes(add(hoje, -25)), dataPagamento: fmt(add(hoje, -24)), formaPagamento: 'PIX',           usuario: 'financeiro', dataRegistro: fmt(add(hoje, -30)), jurosMulta: 15.50 }
     ];
   };
 
@@ -101,12 +109,14 @@ const RELATORIO = (() => {
           frota:         _isCategoriaFrota(c.categoria),
           qtd:           0,
           totalPendente: 0,  // em aberto (Pendente + Vence Hoje + Vencido)
-          totalPago:     0
+          totalPago:     0,  // já com juros/multa
+          totalJuros:    0
         };
       }
       grupos[c.categoria].qtd++;
       if (c.dataPagamento) {
-        grupos[c.categoria].totalPago     += c.valor;
+        grupos[c.categoria].totalPago     += _totalConta(c);
+        grupos[c.categoria].totalJuros    += _juros(c);
       } else {
         grupos[c.categoria].totalPendente += c.valor;
       }
@@ -125,8 +135,8 @@ const RELATORIO = (() => {
     dados.forEach((c) => {
       const mes = c.vencimento.substring(0, 7); // YYYY-MM
       if (!meses[mes]) meses[mes] = { mes, total: 0, pago: 0, aberto: 0 };
-      meses[mes].total += c.valor;
-      if (c.dataPagamento) meses[mes].pago  += c.valor;
+      meses[mes].total += _totalConta(c);
+      if (c.dataPagamento) meses[mes].pago  += _totalConta(c);
       else                 meses[mes].aberto += c.valor;
     });
     return Object.values(meses).sort((a, b) => a.mes.localeCompare(b.mes));
@@ -139,7 +149,7 @@ const RELATORIO = (() => {
     let pago = 0, pendente = 0, vencido = 0;
     dados.forEach((c) => {
       const st = _calcularStatus(c);
-      if      (st === CONFIG.statusConta.PAGO)    pago     += c.valor;
+      if      (st === CONFIG.statusConta.PAGO)    pago     += _totalConta(c);
       else if (st === CONFIG.statusConta.VENCIDO) vencido  += c.valor;
       else                                         pendente += c.valor; // Pendente + Vence Hoje
     });
@@ -208,6 +218,7 @@ const RELATORIO = (() => {
                 <th class="text-right">Qtd. Contas</th>
                 <th class="text-right">Total em Aberto</th>
                 <th class="text-right">Total Pago</th>
+                <th class="text-right" title="Juros e multas já somados no Total Pago">Juros/Multa</th>
                 <th class="text-right">Total Geral</th>
               </tr>
             </thead>
@@ -253,7 +264,7 @@ const RELATORIO = (() => {
     const tfoot = document.getElementById('tfoot-resumo');
 
     if (!resumo.length) {
-      tbody.innerHTML = `<tr><td colspan="5" class="tabela-vazia">Nenhum dado para o período selecionado.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="tabela-vazia">Nenhum dado para o período selecionado.</td></tr>`;
       tfoot.innerHTML = '';
       return;
     }
@@ -266,6 +277,7 @@ const RELATORIO = (() => {
           <td class="text-right">${r.qtd}</td>
           <td class="text-right">${UI.formatMoeda(r.totalPendente)}</td>
           <td class="text-right">${UI.formatMoeda(r.totalPago)}</td>
+          <td class="text-right">${r.totalJuros ? UI.formatMoeda(r.totalJuros) : '—'}</td>
           <td class="text-right"><strong>${UI.formatMoeda(r.totalGeral)}</strong></td>
         </tr>
       `;
@@ -275,6 +287,7 @@ const RELATORIO = (() => {
     const totQtd       = resumo.reduce((s, r) => s + r.qtd, 0);
     const totPendente  = resumo.reduce((s, r) => s + r.totalPendente, 0);
     const totPago      = resumo.reduce((s, r) => s + r.totalPago, 0);
+    const totJuros     = resumo.reduce((s, r) => s + r.totalJuros, 0);
     const totGeral     = resumo.reduce((s, r) => s + r.totalGeral, 0);
 
     tfoot.innerHTML = `
@@ -283,6 +296,7 @@ const RELATORIO = (() => {
         <td class="text-right"><strong>${totQtd}</strong></td>
         <td class="text-right"><strong>${UI.formatMoeda(totPendente)}</strong></td>
         <td class="text-right"><strong>${UI.formatMoeda(totPago)}</strong></td>
+        <td class="text-right"><strong>${totJuros ? UI.formatMoeda(totJuros) : '—'}</strong></td>
         <td class="text-right"><strong>${UI.formatMoeda(totGeral)}</strong></td>
       </tr>
     `;
@@ -411,17 +425,45 @@ const RELATORIO = (() => {
     const catSel  = document.getElementById('filtro-rel-categoria');
     const fornSel = document.getElementById('filtro-rel-fornecedor');
 
+    const cAtual = catSel?.value;
+    const fAtual = fornSel?.value;
+
     const cats  = [...new Set(_dados.map((c) => c.categoria))].sort();
     const forns = [...new Set(_dados.map((c) => c.fornecedor))].sort();
 
     if (catSel) {
       catSel.innerHTML = '<option value="">Todas</option>' +
         cats.map((n) => `<option value="${n}">${n}</option>`).join('');
+      catSel.value = cAtual || '';
     }
     if (fornSel) {
       fornSel.innerHTML = '<option value="">Todos</option>' +
         forns.map((n) => `<option value="${n}">${n}</option>`).join('');
+      fornSel.value = fAtual || '';
     }
+  };
+
+  // ===== FILTROS GUARDADOS (a tela reabre como foi deixada) =====
+
+  const CAMPOS_FILTRO = ['filtro-data-inicio', 'filtro-data-fim',
+                         'filtro-rel-categoria', 'filtro-rel-fornecedor', 'filtro-rel-status'];
+  const CHAVE_FILTROS = 'relatorio_filtros_tela';
+
+  const _guardarFiltros = () => {
+    const f = {};
+    CAMPOS_FILTRO.forEach((id) => { f[id] = document.getElementById(id)?.value || ''; });
+    try { sessionStorage.setItem(CHAVE_FILTROS, JSON.stringify(f)); } catch { /* armazenamento bloqueado */ }
+  };
+
+  // Só depois que os selects já têm as opções, senão o valor guardado não cola
+  const _restaurarFiltros = () => {
+    let f;
+    try { f = JSON.parse(sessionStorage.getItem(CHAVE_FILTROS) || 'null'); } catch { return; }
+    if (!f) return;
+    CAMPOS_FILTRO.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && f[id]) el.value = f[id];
+    });
   };
 
   const _filtrar = () => {
@@ -446,6 +488,7 @@ const RELATORIO = (() => {
     _renderGraficoMensal(_filtrados);
     _renderGraficoStatus(_filtrados);
     _renderGrafico(resumo);
+    _guardarFiltros();
   };
 
   const _limparFiltros = () => {
@@ -481,6 +524,7 @@ const RELATORIO = (() => {
     const totGeral    = resumo.reduce((s, r) => s + r.totalGeral, 0);
     const totPendente = resumo.reduce((s, r) => s + r.totalPendente, 0);
     const totPago     = resumo.reduce((s, r) => s + r.totalPago, 0);
+    const totJuros    = resumo.reduce((s, r) => s + r.totalJuros, 0);
     const totQtd      = resumo.reduce((s, r) => s + r.qtd, 0);
 
     const colunas = [
@@ -488,6 +532,7 @@ const RELATORIO = (() => {
       { header: 'Qtd.',            dataKey: 'qtd'           },
       { header: 'Total em Aberto', dataKey: 'totalPendente' },
       { header: 'Total Pago',      dataKey: 'totalPago'     },
+      { header: 'Juros/Multa',     dataKey: 'totalJuros'    },
       { header: 'Total Geral',     dataKey: 'totalGeral'    }
     ];
 
@@ -496,10 +541,13 @@ const RELATORIO = (() => {
       qtd:           r.qtd,
       totalPendente: UI.formatMoeda(r.totalPendente),
       totalPago:     UI.formatMoeda(r.totalPago),
+      totalJuros:    r.totalJuros ? UI.formatMoeda(r.totalJuros) : '—',
       totalGeral:    UI.formatMoeda(r.totalGeral)
     }));
 
-    const rodapeTexto = `${totQtd} registros | Em aberto: ${UI.formatMoeda(totPendente)} | Pago: ${UI.formatMoeda(totPago)} | Total: ${UI.formatMoeda(totGeral)}`;
+    const rodapeTexto = `${totQtd} registros | Em aberto: ${UI.formatMoeda(totPendente)} | Pago: ${UI.formatMoeda(totPago)}` +
+      (totJuros ? ` (inclui ${UI.formatMoeda(totJuros)} de juros/multa)` : '') +
+      ` | Total: ${UI.formatMoeda(totGeral)}`;
 
     PDF.gerar(_tituloPdf(), colunas, dadosPdf, 'l', { rodapeTexto });
   };
@@ -514,6 +562,7 @@ const RELATORIO = (() => {
 
     const cabecalho = [
       'ID', 'Fornecedor', 'Categoria', 'Descrição', 'Valor',
+      'Juros/Multa', 'Valor Total',
       'Vencimento', 'Competência', 'Status',
       'Data Pagamento', 'Forma Pagamento', 'Nº Documento',
       'Usuário', 'Data Registro'
@@ -525,6 +574,8 @@ const RELATORIO = (() => {
       c.categoria,
       c.descricao,
       c.valor.toFixed(2).replace('.', ','),
+      _juros(c).toFixed(2).replace('.', ','),
+      _totalConta(c).toFixed(2).replace('.', ','),
       c.vencimento,
       _formatMes(c.competencia),
       _calcularStatus(c),
@@ -579,6 +630,7 @@ const RELATORIO = (() => {
     }
 
     _populaSelectsFiltros();
+    if (_restaurarPendente) { _restaurarPendente = false; _restaurarFiltros(); }
     _filtrar();
   };
 
@@ -602,6 +654,7 @@ const RELATORIO = (() => {
 
     _renderHtml();
     _bindEventos();
+    _restaurarPendente = true;
     await _carregarDados();
   };
 

@@ -8,6 +8,8 @@ const CONTAS = (() => {
   let _categorias    = [];
   let _solicitantes  = [];
   let _editandoId    = null;
+  // Na primeira carga da tela, reaplica o filtro usado antes de sair
+  let _restaurarPendente = false;
   // Identifica o envio do formulário de conta nova: se o mesmo envio chegar duas vezes
   // (clique duplo, conexão que caiu), o banco reconhece e não cria outra conta
   let _chaveEnvio    = null;
@@ -277,6 +279,16 @@ const CONTAS = (() => {
                 <div class="form-group"><!-- espaço reservado --></div>
               </div>
 
+              <!-- Juros/Multa — só aparece ao editar conta já paga, para corrigir o valor lançado -->
+              <div class="form-row mt-2 hidden" id="bloco-juros-edicao">
+                <div class="form-group">
+                  <label class="form-label" for="ct-juros-multa">Juros/Multa (R$)</label>
+                  <input id="ct-juros-multa" type="text" class="form-input" placeholder="0,00" inputmode="numeric" autocomplete="off" />
+                  <small class="form-ajuda" id="ct-juros-ajuda"></small>
+                </div>
+                <div class="form-group"><!-- espaço reservado --></div>
+              </div>
+
               <div class="form-group">
                 <label class="form-label" for="ct-observacao">Observação</label>
                 <textarea id="ct-observacao" class="form-textarea" placeholder="Informações adicionais..."></textarea>
@@ -424,6 +436,28 @@ const CONTAS = (() => {
     }
   };
 
+  // Campos do painel de filtros — guardados para a tela reabrir como foi deixada
+  const CAMPOS_FILTRO = ['filtro-data-inicio', 'filtro-data-fim', 'filtro-fornecedor',
+                         'filtro-categoria', 'filtro-solicitante', 'filtro-status'];
+  const CHAVE_FILTROS = 'contas_filtros_tela';
+
+  const _guardarFiltros = () => {
+    const f = {};
+    CAMPOS_FILTRO.forEach((id) => { f[id] = document.getElementById(id)?.value || ''; });
+    try { sessionStorage.setItem(CHAVE_FILTROS, JSON.stringify(f)); } catch { /* armazenamento bloqueado */ }
+  };
+
+  // Só depois que os selects já têm as opções, senão o valor guardado não cola
+  const _restaurarFiltros = () => {
+    let f;
+    try { f = JSON.parse(sessionStorage.getItem(CHAVE_FILTROS) || 'null'); } catch { return; }
+    if (!f) return;
+    CAMPOS_FILTRO.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && f[id]) el.value = f[id];
+    });
+  };
+
   const _filtrar = () => {
     const dataInicio   = document.getElementById('filtro-data-inicio')?.value   || '';
     const dataFim      = document.getElementById('filtro-data-fim')?.value      || '';
@@ -449,6 +483,7 @@ const CONTAS = (() => {
       Number(a.id) - Number(b.id));
 
     _renderTabela(_filtrados);
+    _guardarFiltros();
   };
 
   const _limparFiltros = () => {
@@ -461,9 +496,10 @@ const CONTAS = (() => {
     _filtrar();
   };
 
+  // Filtro vindo de um card do Dashboard; devolve true quando havia um
   const _aplicarFiltroSalvo = () => {
     const salvo = sessionStorage.getItem('contas_filtro');
-    if (!salvo) return;
+    if (!salvo) return false;
     sessionStorage.removeItem('contas_filtro');
     try {
       const f = JSON.parse(salvo);
@@ -493,7 +529,8 @@ const CONTAS = (() => {
         if (elI) elI.value = toISO(inicioMes); if (elF) elF.value = toISO(fimMes);
         if (elSt) elSt.value = CONFIG.statusConta.PAGO;
       }
-    } catch { /* filtro malformado */ }
+      return true;
+    } catch { return false; /* filtro malformado */ }
   };
 
   // ===== SELECTS DO FORMULÁRIO =====
@@ -572,7 +609,7 @@ const CONTAS = (() => {
   // ===== MODAL CONTA =====
 
   const _limparModalConta = () => {
-    ['ct-id','ct-descricao','ct-valor','ct-num-documento','ct-observacao',
+    ['ct-id','ct-descricao','ct-valor','ct-juros-multa','ct-num-documento','ct-observacao',
      'ct-valor-total','ct-num-parcelas','ct-primeiro-venc']
       .forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
     ['ct-fornecedor','ct-categoria','ct-solicitante','ct-vencimento',
@@ -580,6 +617,8 @@ const CONTAS = (() => {
       .forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
 
     document.querySelectorAll('#form-conta .erro').forEach((el) => el.classList.remove('erro'));
+
+    document.getElementById('bloco-juros-edicao')?.classList.add('hidden');
 
     // Reset parcelamento
     const radio = document.querySelector('input[name="ct-tipo"][value="avista"]');
@@ -620,6 +659,19 @@ const CONTAS = (() => {
     document.getElementById('ct-competencia').value   = conta.competencia || '';
     document.getElementById('ct-num-documento').value = conta.numDocumento || '';
     document.getElementById('ct-observacao').value    = conta.observacao || '';
+
+    // Juros/Multa só existe em conta paga — é aqui que se corrige um valor digitado errado
+    const blocoJuros = document.getElementById('bloco-juros-edicao');
+    if (conta.dataPagamento) {
+      document.getElementById('ct-juros-multa').value =
+        (conta.jurosMulta || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+      const ajuda = document.getElementById('ct-juros-ajuda');
+      if (ajuda) ajuda.textContent = `Pago em ${UI.formatData(conta.dataPagamento)}` +
+        (conta.formaPagamento ? ` — ${conta.formaPagamento}` : '') + '.';
+      blocoJuros?.classList.remove('hidden');
+    } else {
+      blocoJuros?.classList.add('hidden');
+    }
 
     // Edição não permite alterar para parcelada
     document.getElementById('bloco-tipo-pag').classList.add('hidden');
@@ -723,6 +775,12 @@ const CONTAS = (() => {
           vencimento:  document.getElementById('ct-vencimento').value,
           competencia: document.getElementById('ct-competencia').value,
         };
+
+        // Juros/multa só vai no envio quando o campo está em tela (conta já paga)
+        const blocoJuros = document.getElementById('bloco-juros-edicao');
+        if (_editandoId && blocoJuros && !blocoJuros.classList.contains('hidden')) {
+          payload.jurosMulta = _parseMoeda(document.getElementById('ct-juros-multa').value);
+        }
 
         if (_editandoId) {
           await API.post('atualizarConta', payload);
@@ -861,6 +919,7 @@ const CONTAS = (() => {
     }
 
     _populaSelectsFiltros();
+    if (_restaurarPendente) { _restaurarPendente = false; _restaurarFiltros(); }
     _filtrar();
   };
 
@@ -882,6 +941,11 @@ const CONTAS = (() => {
     // Máscara no campo valor (à vista)
     _addListener(document.getElementById('ct-valor'), 'input', () =>
       _mascaraMoeda(document.getElementById('ct-valor'))
+    );
+
+    // Máscara no campo juros/multa da edição da conta
+    _addListener(document.getElementById('ct-juros-multa'), 'input', () =>
+      _mascaraMoeda(document.getElementById('ct-juros-multa'))
     );
 
     // Máscara no campo juros/multa do pagamento
@@ -932,7 +996,8 @@ const CONTAS = (() => {
     if (!AUTH.requerPerfil([CONFIG.perfis.ADMIN, CONFIG.perfis.DIRETOR, CONFIG.perfis.FINANCEIRO])) return;
     _renderHtml();
     _bindEventos();
-    _aplicarFiltroSalvo();
+    // Card do Dashboard manda no filtro; sem ele, a tela volta como foi deixada
+    _restaurarPendente = !_aplicarFiltroSalvo();
     await _carregarDados();
     _filtrar();
   };

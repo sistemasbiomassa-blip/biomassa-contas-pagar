@@ -59,7 +59,7 @@ const DASHBOARD = (() => {
         const dtPago = new Date(c.dataPagamento + 'T00:00:00');
         if (dtPago >= inicioMes && dtPago <= fimMes) {
           kpi.pagosMes.count++;
-          kpi.pagosMes.total += valor;
+          kpi.pagosMes.total += valor + (parseFloat(c.jurosMulta) || 0);
         }
         pagas.push(c);
       } else {
@@ -168,7 +168,7 @@ const DASHBOARD = (() => {
               <tr>
                 <th>Fornecedor</th>
                 <th>Descrição</th>
-                <th class="text-right">Valor</th>
+                <th class="text-right">Valor Pago</th>
                 <th>Data Pagamento</th>
                 <th>Forma Pagamento</th>
               </tr>
@@ -260,9 +260,9 @@ const DASHBOARD = (() => {
       { key: 'descricao',      label: 'Descrição' },
       {
         key: 'valor',
-        label: 'Valor',
+        label: 'Valor Pago',
         classe: 'text-right',
-        formato: (v) => UI.formatMoeda(v)
+        formato: (v, linha) => UI.formatMoeda((parseFloat(v) || 0) + (parseFloat(linha.jurosMulta) || 0))
       },
       {
         key: 'dataPagamento',
